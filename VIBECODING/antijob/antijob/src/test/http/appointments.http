@@ -1,0 +1,82 @@
+### Base URL
+@baseUrl = http://localhost:8080/api
+
+### ========================================
+### 1. Lấy tất cả lịch hẹn
+### ========================================
+GET {{baseUrl}}/appointments
+Accept: application/json
+
+###
+
+### ========================================
+### 2. Đặt lịch hẹn mới
+### ========================================
+POST {{baseUrl}}/appointments
+Content-Type: application/json
+
+{
+  "patientId": 1,
+  "dentistId": 1,
+  "serviceId": 1,
+  "appointmentDate": "2026-07-05",
+  "startTime": "09:00",
+  "notes": "Bệnh nhân bị ê buốt răng hàm trên"
+}
+
+###
+
+### ========================================
+### 3. Lấy lịch hẹn theo ID
+### ========================================
+GET {{baseUrl}}/appointments/1
+Accept: application/json
+
+###
+
+### ========================================
+### 4. Huỷ lịch hẹn
+### ========================================
+PATCH {{baseUrl}}/appointments/1/cancel
+Accept: application/json
+
+###
+
+### ========================================
+### 5. Xem slot trống của bác sĩ theo ngày
+### ========================================
+GET {{baseUrl}}/slots?dentistId=1&date=2026-07-05
+Accept: application/json
+
+###
+
+### ========================================
+### 6. Đặt thêm 1 lịch khác (để test findAll)
+### ========================================
+POST {{baseUrl}}/appointments
+Content-Type: application/json
+
+{
+  "patientId": 1,
+  "dentistId": 1,
+  "serviceId": 1,
+  "appointmentDate": "2026-07-10",
+  "startTime": "14:00",
+  "notes": "Tái khám định kỳ"
+}
+
+###
+
+### ========================================
+### 7. Lấy lịch hẹn ID không tồn tại (test lỗi)
+### ========================================
+GET {{baseUrl}}/appointments/999
+Accept: application/json
+
+###
+
+### ========================================
+### 8. Huỷ lịch đã huỷ (test lỗi duplicate cancel)
+### ========================================
+PATCH {{baseUrl}}/appointments/1/cancel
+Accept: application/json
