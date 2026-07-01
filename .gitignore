@@ -1,0 +1,30 @@
+# OS
+*.lnk
+.DS_Store
+Thumbs.db
+
+# IDE / AI tools
+.vscode/
+.idea/
+.claude/
+.gemini/
+.mcp.json
+GEMINI.md
+
+# CodeGraph index
+.codegraph/
+
+# Java build artifacts
+build/
+target/
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+.gradle/
+out/
+
+# Secrets / env
+.env
+*.env
+application-local.yaml
+application-local.yml
