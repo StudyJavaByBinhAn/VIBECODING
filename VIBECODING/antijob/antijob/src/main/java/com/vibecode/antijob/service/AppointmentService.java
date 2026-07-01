@@ -2,82 +2,92 @@ package com.vibecode.antijob.service;
 
 import com.vibecode.antijob.dto.AppointmentRequest;
 import com.vibecode.antijob.dto.AppointmentResponse;
-import com.vibecode.antijob.entity.*;
+import com.vibecode.antijob.entity.Appointment;
+import com.vibecode.antijob.entity.Dentist;
+import com.vibecode.antijob.entity.DentalService;
+import com.vibecode.antijob.entity.Patient;
 import com.vibecode.antijob.enums.AppointmentStatus;
-import com.vibecode.antijob.enums.Gender;
+import com.vibecode.antijob.repository.AppointmentRepository;
+import com.vibecode.antijob.repository.DentalServiceRepository;
+import com.vibecode.antijob.repository.DentistRepository;
+import com.vibecode.antijob.repository.PatientRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class AppointmentService {
 
-    private final AtomicLong idSeq = new AtomicLong(1);
-    private final List<Appointment> store = new ArrayList<>();
+    private final AppointmentRepository appointmentRepository;
+    private final PatientRepository patientRepository;
+    private final DentistRepository dentistRepository;
+    private final DentalServiceRepository dentalServiceRepository;
 
-    // --- seed data ---
-    private final Dentist DENTIST_1 = Dentist.builder()
-            .id(1L).fullName("BS. Nguyễn Văn A").phone("0901000001")
-            .specialization("Chỉnh nha").licenseNumber("DN-001").active(true).build();
-
-    private final Patient PATIENT_1 = Patient.builder()
-            .id(1L).fullName("Trần Thị B").phone("0911000001")
-            .dateOfBirth(LocalDate.of(1995, 3, 20))
-            .gender(Gender.FEMALE).address("123 Lê Lợi, Q1, TP.HCM").build();
-
-    private final DentalService SERVICE_1 = DentalService.builder()
-            .id(1L).name("Làm sạch răng").description("Cạo vôi, đánh bóng").
-            durationMinutes(30).price(new BigDecimal("200000")).active(true).build();
-
+    @Transactional(readOnly = true)
     public List<AppointmentResponse> findAll() {
-        return store.stream().map(this::toResponse).collect(Collectors.toList());
+        return appointmentRepository.findAll().stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
     public AppointmentResponse findById(Long id) {
-        return store.stream()
-                .filter(a -> a.getId().equals(id))
-                .findFirst()
+        return appointmentRepository.findById(id)
                 .map(this::toResponse)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lịch hẹn id=" + id));
     }
 
+    @Transactional
     public AppointmentResponse book(AppointmentRequest req) {
-        LocalTime endTime = req.getStartTime().plusMinutes(SERVICE_1.getDurationMinutes());
+        Patient patient = patientRepository.findById(req.getPatientId())
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy bệnh nhân id=" + req.getPatientId()));
+
+        Dentist dentist = dentistRepository.findById(req.getDentistId())
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy bác sĩ id=" + req.getDentistId()));
+
+        DentalService service = dentalServiceRepository.findById(req.getServiceId())
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy dịch vụ id=" + req.getServiceId()));
+
+        LocalTime endTime = req.getStartTime().plusMinutes(service.getDurationMinutes());
+
+        // Pessimistic lock + kiểm tra conflict
+        List<Appointment> conflicts = appointmentRepository.findConflictingForUpdate(
+                req.getDentistId(), req.getAppointmentDate(), req.getStartTime(), endTime
+        );
+        if (!conflicts.isEmpty()) {
+            throw new IllegalStateException("Slot đã được đặt, vui lòng chọn giờ khác");
+        }
+
         Appointment appt = Appointment.builder()
-                .id(idSeq.getAndIncrement())
-                .patient(PATIENT_1)
-                .dentist(DENTIST_1)
-                .service(SERVICE_1)
+                .patient(patient)
+                .dentist(dentist)
+                .service(service)
                 .appointmentDate(req.getAppointmentDate())
                 .startTime(req.getStartTime())
                 .endTime(endTime)
                 .status(AppointmentStatus.PENDING)
                 .notes(req.getNotes())
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
                 .build();
-        store.add(appt);
-        return toResponse(appt);
+
+        return toResponse(appointmentRepository.save(appt));
     }
 
+    @Transactional
     public AppointmentResponse cancel(Long id) {
-        Appointment appt = store.stream()
-                .filter(a -> a.getId().equals(id))
-                .findFirst()
+        Appointment appt = appointmentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lịch hẹn id=" + id));
-        if (appt.getStatus() == AppointmentStatus.CANCELLED) {
-            throw new IllegalArgumentException("Lịch hẹn đã bị huỷ trước đó");
+
+        if (appt.getStatus() != AppointmentStatus.PENDING && appt.getStatus() != AppointmentStatus.CONFIRMED) {
+            throw new IllegalArgumentException("Chỉ có thể huỷ lịch ở trạng thái PENDING hoặc CONFIRMED");
         }
+
         appt.setStatus(AppointmentStatus.CANCELLED);
-        appt.setUpdatedAt(LocalDateTime.now());
-        return toResponse(appt);
+        return toResponse(appointmentRepository.save(appt));
     }
 
     private AppointmentResponse toResponse(Appointment a) {

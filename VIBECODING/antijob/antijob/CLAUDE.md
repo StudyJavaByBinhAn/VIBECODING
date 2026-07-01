@@ -80,7 +80,7 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 
 ## Progress Tracking
 
-**Đã hoàn thành:**
+**Phase 1 — Đã hoàn thành (trước 2026-07-02):**
 - Khởi tạo project Spring Boot Gradle (`AntijobApplication.java`).
 - Thiết kế entity POJO: User, Patient, Dentist, DentalService, WorkSchedule, Appointment, ClinicSettings.
 - Enums: Role, AppointmentStatus, Gender.
@@ -89,9 +89,27 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 - SlotService + AppointmentService (in-memory, không DB).
 - AppointmentController với các endpoint cơ bản.
 
-**Tiếp theo (Phase 3 — khi có DB):**
-- Thêm dependency: JPA, PostgreSQL, Redis, JWT vào `build.gradle`.
-- Chuyển POJO → JPA Entity (thêm annotations).
-- Thay in-memory store bằng JpaRepository.
-- Thêm Spring Security + JWT filter.
-- Pessimistic Lock cho `bookAppointment`.
+**Phase 2 — Hoàn thành 2026-07-02 (DB tích hợp):**
+- Thêm dependency JPA, PostgreSQL, Flyway, Lombok vào `build.gradle`.
+- Chuyển toàn bộ POJO entity → JPA Entity (`@Entity`, `@Table`, `@Id`, `@Column`, `FetchType.LAZY`).
+- Tạo 6 JPA Repositories: Appointment, Patient, Dentist, DentalService, WorkSchedule, ClinicSettings.
+- `AppointmentRepository` có `findConflictingForUpdate` (pessimistic lock `@Lock(PESSIMISTIC_WRITE)`).
+- Chuyển `AppointmentService` và `SlotService` từ in-memory → dùng JpaRepository thực.
+- Cấu hình datasource PostgreSQL + Flyway trong `application.yaml`.
+- Tạo `DataInitializer` seed data tự động khi app khởi động lần đầu.
+- Tạo `V1__init_schema.sql` migration file (tất cả tables + indexes + seed data).
+- App chạy thực tế: API trả data từ PostgreSQL 16, endpoint `/api/appointments` và `/api/slots` hoạt động.
+- ⚠️ Flyway chưa tự động chạy với Spring Boot 4.1.0 (cần điều tra thêm — tạm dùng DataInitializer).
+
+**Phase 3 — Kế hoạch tiếp theo (Spring Security + JWT):**
+- [ ] Thêm dependency: `spring-boot-starter-security`, `jjwt-api`, `jjwt-impl`, `jjwt-jackson` vào `build.gradle`.
+- [ ] `SecurityConfig`: permit `/api/auth/**`, bảo vệ tất cả routes còn lại, stateless session.
+- [ ] `JwtUtil`: generate token (email + role + expiry), validate, extract claims.
+- [ ] `JwtAuthFilter` (`OncePerRequestFilter`): đọc `Authorization: Bearer <token>`, set SecurityContext.
+- [ ] DTOs: `AuthRequest` (email, password), `AuthResponse` (token, role, expiresIn).
+- [ ] `AuthController`: `POST /api/auth/register`, `POST /api/auth/login`.
+- [ ] `AuthService`: register (tạo User + Patient, hash password BCrypt), login (xác thực + trả JWT).
+- [ ] `UserRepository` + `UserDetailsServiceImpl`.
+- [ ] `BCryptPasswordEncoder` bean trong SecurityConfig.
+- [ ] Phân quyền trên controller: `@PreAuthorize("hasRole('PATIENT')")` cho book, `hasRole('ADMIN')` cho xem tất cả.
+- [ ] Flyway: điều tra tại sao Spring Boot 4.1.0 không auto-load `FlywayAutoConfiguration`.
