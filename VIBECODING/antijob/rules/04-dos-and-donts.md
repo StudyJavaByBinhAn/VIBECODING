@@ -18,4 +18,4 @@
 - Không catch `Exception` chung → catch exception cụ thể.
 - Không để N+1 query → dùng `@EntityGraph` / `JOIN FETCH`.
 - Không `System.out.println()` → dùng SLF4J `log.info()`.
-- Không nói "xong" khi chưa `mvn compile` + `mvn test` pass.
+- Không nói "xong" khi chưa `./gradlew build` pass.

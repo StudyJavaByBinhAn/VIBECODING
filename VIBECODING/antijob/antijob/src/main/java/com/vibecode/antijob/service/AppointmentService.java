@@ -12,6 +12,10 @@ import com.vibecode.antijob.repository.DentalServiceRepository;
 import com.vibecode.antijob.repository.DentistRepository;
 import com.vibecode.antijob.repository.PatientRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,16 +40,18 @@ public class AppointmentService {
     }
 
     @Transactional(readOnly = true)
-    public AppointmentResponse findById(Long id) {
-        return appointmentRepository.findById(id)
-                .map(this::toResponse)
+    public AppointmentResponse findById(Long id, Authentication authentication) {
+        Appointment appt = appointmentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lịch hẹn id=" + id));
+        assertCanAccess(appt, authentication, true);
+        return toResponse(appt);
     }
 
     @Transactional
-    public AppointmentResponse book(AppointmentRequest req) {
-        Patient patient = patientRepository.findById(req.getPatientId())
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy bệnh nhân id=" + req.getPatientId()));
+    @CacheEvict(cacheNames = "slots", allEntries = true)
+    public AppointmentResponse book(AppointmentRequest req, String patientEmail) {
+        Patient patient = patientRepository.findByUserEmail(patientEmail)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy hồ sơ bệnh nhân cho tài khoản này"));
 
         Dentist dentist = dentistRepository.findById(req.getDentistId())
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy bác sĩ id=" + req.getDentistId()));
@@ -78,9 +84,11 @@ public class AppointmentService {
     }
 
     @Transactional
-    public AppointmentResponse cancel(Long id) {
+    @CacheEvict(cacheNames = "slots", allEntries = true)
+    public AppointmentResponse cancel(Long id, Authentication authentication) {
         Appointment appt = appointmentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lịch hẹn id=" + id));
+        assertCanAccess(appt, authentication, false);
 
         if (appt.getStatus() != AppointmentStatus.PENDING && appt.getStatus() != AppointmentStatus.CONFIRMED) {
             throw new IllegalArgumentException("Chỉ có thể huỷ lịch ở trạng thái PENDING hoặc CONFIRMED");
@@ -88,6 +96,27 @@ public class AppointmentService {
 
         appt.setStatus(AppointmentStatus.CANCELLED);
         return toResponse(appointmentRepository.save(appt));
+    }
+
+    /**
+     * ADMIN luôn được phép. PATIENT chỉ được phép trên lịch hẹn của chính mình.
+     * DENTIST chỉ được phép xem (allowDentist=true) lịch hẹn được giao cho mình, không được huỷ.
+     */
+    private void assertCanAccess(Appointment appt, Authentication authentication, boolean allowDentist) {
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(a -> a.equals("ROLE_ADMIN"));
+        if (isAdmin) {
+            return;
+        }
+
+        String email = authentication.getName();
+        boolean isOwnerPatient = appt.getPatient().getUser().getEmail().equals(email);
+        boolean isAssignedDentist = allowDentist && appt.getDentist().getUser().getEmail().equals(email);
+
+        if (!isOwnerPatient && !isAssignedDentist) {
+            throw new AccessDeniedException("Không có quyền truy cập lịch hẹn id=" + appt.getId());
+        }
     }
 
     private AppointmentResponse toResponse(Appointment a) {

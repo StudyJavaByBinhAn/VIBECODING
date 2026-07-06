@@ -2,7 +2,115 @@
 @baseUrl = http://localhost:8080/api
 
 ### ========================================
-### 1. Lấy tất cả lịch hẹn
+### 0a. Đăng ký user mới (role luôn = PATIENT)
+### Đổi email nếu chạy lại (email đã tồn tại → 400)
+### ========================================
+# @name register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "patient1@example.com",
+  "password": "secret123",
+  "fullName": "Nguyen Van Test",
+  "phone": "0900000000"
+}
+
+###
+
+### ========================================
+### 0b. Đăng nhập (PATIENT) → lấy JWT (dùng cho các request PATIENT bên dưới)
+### ========================================
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "patient1@example.com",
+  "password": "secret123"
+}
+
+###
+
+@token = {{login.response.body.$.data.token}}
+
+### ========================================
+### 0c. Đăng nhập sai mật khẩu (test lỗi, expect 400)
+### ========================================
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "patient1@example.com",
+  "password": "wrong-password"
+}
+
+###
+
+### ========================================
+### 0d. Đăng nhập ADMIN (tài khoản seed sẵn trong DataInitializer)
+### Đổi mật khẩu này trước khi lên prod!
+### ========================================
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@vibecode.local",
+  "password": "admin123"
+}
+
+###
+
+@adminToken = {{loginAdmin.response.body.$.data.token}}
+
+### ========================================
+### 0e. ADMIN tạo tài khoản DENTIST mới
+### ========================================
+POST {{baseUrl}}/auth/register-staff
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "email": "bsmoi@dental.vn",
+  "password": "secret123",
+  "fullName": "BS. Moi",
+  "phone": "0909000000",
+  "role": "DENTIST",
+  "specialization": "Răng trẻ em",
+  "licenseNumber": "DN-099"
+}
+
+###
+
+### ========================================
+### 0f. register-staff không có token ADMIN (test lỗi, expect 403)
+### ========================================
+POST {{baseUrl}}/auth/register-staff
+Content-Type: application/json
+
+{
+  "email": "hacker@evil.com",
+  "password": "secret123",
+  "fullName": "Hacker",
+  "phone": "0900000001",
+  "role": "ADMIN"
+}
+
+###
+
+### ========================================
+### 1. Lấy tất cả lịch hẹn — CHỈ ADMIN
+### Dùng {{token}} (PATIENT) → expect 403. Đổi sang {{adminToken}} để test 200.
+### ========================================
+GET {{baseUrl}}/appointments
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 1b. Lấy tất cả lịch hẹn — không có token (expect 403)
 ### ========================================
 GET {{baseUrl}}/appointments
 Accept: application/json
@@ -10,13 +118,14 @@ Accept: application/json
 ###
 
 ### ========================================
-### 2. Đặt lịch hẹn mới
+### 2. Đặt lịch hẹn mới — CHỈ PATIENT
+### patientId KHÔNG nằm trong body nữa — server tự lấy từ JWT (email) để tránh giả mạo.
 ### ========================================
 POST {{baseUrl}}/appointments
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "patientId": 1,
   "dentistId": 1,
   "serviceId": 1,
   "appointmentDate": "2026-07-05",
@@ -27,25 +136,30 @@ Content-Type: application/json
 ###
 
 ### ========================================
-### 3. Lấy lịch hẹn theo ID
+### 3. Lấy lịch hẹn theo ID — chỉ chủ sở hữu (PATIENT), DENTIST được giao, hoặc ADMIN
+### Test đầy đủ case ownership (403 khi không phải chủ sở hữu): xem features/appointment-ownership.http
 ### ========================================
 GET {{baseUrl}}/appointments/1
+Authorization: Bearer {{token}}
 Accept: application/json
 
 ###
 
 ### ========================================
-### 4. Huỷ lịch hẹn
+### 4. Huỷ lịch hẹn — chỉ chủ sở hữu (PATIENT) hoặc ADMIN (DENTIST chỉ xem, không huỷ được)
+### Test đầy đủ case ownership (403 khi không phải chủ sở hữu): xem features/appointment-ownership.http
 ### ========================================
 PATCH {{baseUrl}}/appointments/1/cancel
+Authorization: Bearer {{token}}
 Accept: application/json
 
 ###
 
 ### ========================================
-### 5. Xem slot trống của bác sĩ theo ngày
+### 5. Xem slot trống của bác sĩ theo ngày (yêu cầu đã đăng nhập, cache Redis 5 phút)
 ### ========================================
 GET {{baseUrl}}/slots?dentistId=1&date=2026-07-05
+Authorization: Bearer {{token}}
 Accept: application/json
 
 ###
@@ -54,10 +168,10 @@ Accept: application/json
 ### 6. Đặt thêm 1 lịch khác (để test findAll)
 ### ========================================
 POST {{baseUrl}}/appointments
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "patientId": 1,
   "dentistId": 1,
   "serviceId": 1,
   "appointmentDate": "2026-07-10",
@@ -71,6 +185,7 @@ Content-Type: application/json
 ### 7. Lấy lịch hẹn ID không tồn tại (test lỗi)
 ### ========================================
 GET {{baseUrl}}/appointments/999
+Authorization: Bearer {{token}}
 Accept: application/json
 
 ###
@@ -79,4 +194,23 @@ Accept: application/json
 ### 8. Huỷ lịch đã huỷ (test lỗi duplicate cancel)
 ### ========================================
 PATCH {{baseUrl}}/appointments/1/cancel
+Authorization: Bearer {{token}}
+Accept: application/json
+
+###
+
+### ========================================
+### 9. Danh sách bác sĩ đang hoạt động (cache Redis 1 giờ, key dentists-active::all)
+### ========================================
+GET {{baseUrl}}/dentists
+Authorization: Bearer {{token}}
+Accept: application/json
+
+###
+
+### ========================================
+### 10. Danh sách dịch vụ đang hoạt động (cache Redis 1 giờ, key services-active::all)
+### ========================================
+GET {{baseUrl}}/services
+Authorization: Bearer {{token}}
 Accept: application/json

@@ -1,0 +1,145 @@
+### Feature: Ownership authorization cho GET /appointments/{id} và PATCH /appointments/{id}/cancel
+### Mục tiêu: PATIENT A không được xem/huỷ lịch hẹn của PATIENT B. DENTIST được xem (không được huỷ)
+### lịch hẹn của mình. ADMIN luôn được phép.
+### Chạy tuần tự từ trên xuống — mỗi request phụ thuộc kết quả (id) của request trước.
+
+@baseUrl = http://localhost:8080/api
+
+### ========================================
+### 0a. Đăng ký + đăng nhập PATIENT A (chủ sở hữu lịch hẹn)
+### ========================================
+# @name registerA
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "owner-a@example.com",
+  "password": "secret123",
+  "fullName": "Patient Owner A",
+  "phone": "0900000010"
+}
+
+###
+
+# @name loginA
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "owner-a@example.com",
+  "password": "secret123"
+}
+
+###
+
+@tokenA = {{loginA.response.body.$.data.token}}
+
+### ========================================
+### 0b. Đăng ký + đăng nhập PATIENT B (không liên quan — dùng để test 403)
+### ========================================
+# @name registerB
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "owner-b@example.com",
+  "password": "secret123",
+  "fullName": "Patient Owner B",
+  "phone": "0900000011"
+}
+
+###
+
+# @name loginB
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "owner-b@example.com",
+  "password": "secret123"
+}
+
+###
+
+@tokenB = {{loginB.response.body.$.data.token}}
+
+### ========================================
+### 0c. Đăng nhập ADMIN (seed sẵn)
+### ========================================
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@vibecode.local",
+  "password": "admin123"
+}
+
+###
+
+@adminToken = {{loginAdmin.response.body.$.data.token}}
+
+### ========================================
+### 1. PATIENT A đặt lịch hẹn mới → lấy id để test ownership
+### ========================================
+# @name bookByA
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{tokenA}}
+Content-Type: application/json
+
+{
+  "dentistId": 1,
+  "serviceId": 1,
+  "appointmentDate": "2026-08-01",
+  "startTime": "09:00",
+  "notes": "Test ownership"
+}
+
+###
+
+@apptId = {{bookByA.response.body.$.data.id}}
+
+### ========================================
+### 2. PATIENT A (chủ sở hữu) xem được lịch hẹn của mình → expect 200
+### ========================================
+GET {{baseUrl}}/appointments/{{apptId}}
+Authorization: Bearer {{tokenA}}
+Accept: application/json
+
+###
+
+### ========================================
+### 3. PATIENT B (không liên quan) xem lịch hẹn của A → expect 403
+### ========================================
+GET {{baseUrl}}/appointments/{{apptId}}
+Authorization: Bearer {{tokenB}}
+Accept: application/json
+
+###
+
+### ========================================
+### 4. ADMIN xem lịch hẹn bất kỳ → expect 200
+### ========================================
+GET {{baseUrl}}/appointments/{{apptId}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 5. PATIENT B huỷ lịch hẹn của A → expect 403 (không đổi trạng thái)
+### ========================================
+PATCH {{baseUrl}}/appointments/{{apptId}}/cancel
+Authorization: Bearer {{tokenB}}
+Accept: application/json
+
+###
+
+### ========================================
+### 6. PATIENT A (chủ sở hữu) huỷ lịch hẹn của chính mình → expect 200
+### ========================================
+PATCH {{baseUrl}}/appointments/{{apptId}}/cancel
+Authorization: Bearer {{tokenA}}
+Accept: application/json
+
+###

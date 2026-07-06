@@ -4,7 +4,7 @@
 
 ## Project
 
-- **Stack:** Java 21 · Spring Boot 4.1.0 · Gradle · Lombok · (JPA / PostgreSQL / Redis / JWT — sẽ thêm sau)
+- **Stack:** Java 21 · Spring Boot 4.1.0 · Gradle · Lombok · JPA · PostgreSQL · Flyway · Redis · Spring Security · JWT
 - **Package:** `com.vibecode.antijob`
 - **Mô tả:** REST API đặt lịch hẹn nha khoa — bệnh nhân đặt lịch, chọn bác sĩ, admin quản lý
 
@@ -101,15 +101,51 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 - App chạy thực tế: API trả data từ PostgreSQL 16, endpoint `/api/appointments` và `/api/slots` hoạt động.
 - ⚠️ Flyway chưa tự động chạy với Spring Boot 4.1.0 (cần điều tra thêm — tạm dùng DataInitializer).
 
-**Phase 3 — Kế hoạch tiếp theo (Spring Security + JWT):**
-- [ ] Thêm dependency: `spring-boot-starter-security`, `jjwt-api`, `jjwt-impl`, `jjwt-jackson` vào `build.gradle`.
-- [ ] `SecurityConfig`: permit `/api/auth/**`, bảo vệ tất cả routes còn lại, stateless session.
-- [ ] `JwtUtil`: generate token (email + role + expiry), validate, extract claims.
-- [ ] `JwtAuthFilter` (`OncePerRequestFilter`): đọc `Authorization: Bearer <token>`, set SecurityContext.
-- [ ] DTOs: `AuthRequest` (email, password), `AuthResponse` (token, role, expiresIn).
-- [ ] `AuthController`: `POST /api/auth/register`, `POST /api/auth/login`.
-- [ ] `AuthService`: register (tạo User + Patient, hash password BCrypt), login (xác thực + trả JWT).
-- [ ] `UserRepository` + `UserDetailsServiceImpl`.
-- [ ] `BCryptPasswordEncoder` bean trong SecurityConfig.
-- [ ] Phân quyền trên controller: `@PreAuthorize("hasRole('PATIENT')")` cho book, `hasRole('ADMIN')` cho xem tất cả.
-- [ ] Flyway: điều tra tại sao Spring Boot 4.1.0 không auto-load `FlywayAutoConfiguration`.
+**Phase 3 — Hoàn thành 2026-07-02 (Spring Security + JWT):**
+- [x] Thêm dependency: `spring-boot-starter-security`, `jjwt-api/impl/jackson:0.12.6` vào `build.gradle`.
+- [x] `SecurityConfig`: permit `/api/auth/**`, bảo vệ tất cả routes còn lại, stateless session, `@EnableMethodSecurity`.
+- [x] `JwtUtil`: generate token (email + role + expiry), validate, extract claims (jjwt 0.12 API).
+- [x] `JwtAuthFilter` (`OncePerRequestFilter`): đọc `Authorization: Bearer <token>`, set SecurityContext.
+- [x] DTOs: `RegisterRequest` (email, password, fullName, phone), `LoginRequest` (email, password), `AuthResponse` (token, role, expiresIn).
+- [x] `AuthController`: `POST /api/auth/register`, `POST /api/auth/login`.
+- [x] `AuthService`: register (tạo User role=PATIENT + Patient liên kết, hash password BCrypt), login (xác thực + trả JWT).
+- [x] `UserRepository` + `UserDetailsServiceImpl`.
+- [x] `BCryptPasswordEncoder` bean trong SecurityConfig.
+- [x] Phân quyền trên controller: `@PreAuthorize("hasRole('PATIENT')")` cho book, `hasRole('ADMIN')` cho xem tất cả (`GET /api/appointments`).
+- [x] `GlobalExceptionHandler`: thêm handler `AccessDeniedException` → 403 (trước đó bị handler `RuntimeException` bắt nhầm → 500).
+- Đã test thực tế qua curl: register/login trả JWT hợp lệ, PATIENT bị 403 ở endpoint ADMIN-only, book thành công.
+
+**Phase 4 — Hoàn thành 2026-07-04:**
+- [x] Endpoint book lấy `patientId` từ JWT principal (`Authentication.getName()` → `PatientRepository.findByUserEmail`) thay vì nhận trực tiếp từ request body. `AppointmentRequest.patientId` đã bị xoá khỏi DTO.
+- [x] Đăng ký cho DENTIST/ADMIN/RECEPTIONIST: `POST /api/auth/register-staff` (chỉ ADMIN gọi được, `@PreAuthorize("hasRole('ADMIN')")`), DTO `RegisterStaffRequest`. `/api/auth/register` công khai vẫn chỉ tạo PATIENT (đúng chủ đích, không cho public tự tạo ADMIN).
+  - `DataInitializer` seed sẵn 1 tài khoản ADMIN bootstrap: `admin@vibecode.local` / `admin123` — **đổi mật khẩu này trước khi lên prod.**
+- [x] **Flyway root cause tìm ra:** Spring Boot 4 tách `FlywayAutoConfiguration` ra module riêng `org.springframework.boot:spring-boot-flyway` — chỉ có `flyway-core`/`flyway-database-postgresql` trên classpath (như trước) KHÔNG đủ để autoconfig kích hoạt. Đã thêm dependency thiếu + `baseline-on-migrate: true`, `baseline-version: 1` (vì DB đã có bảng tạo thủ công trước đó, không có `flyway_schema_history`). Verify: `flyway_schema_history` giờ có 1 row BASELINE.
+- [x] Redis cache cho slots/dentists/services:
+  - `spring-boot-starter-data-redis` + `spring-boot-starter-cache`, Redis chạy Docker (`dental-redis`, port 6379).
+  - `CacheConfig`: `RedisCacheManagerBuilderCustomizer` (package đã đổi sang `org.springframework.boot.cache.autoconfigure` trong Boot 4), TTL riêng: `slots`=5 phút, `dentists-active`/`services-active`=1 giờ.
+  - `GET /api/dentists`, `GET /api/services` (endpoint mới, không tồn tại trước đó — cần thiết để cache "dentists/services" có ý nghĩa) — cache `@Cacheable`.
+  - `SlotService.getAvailableSlots` → `@Cacheable("slots")`; `AppointmentService.book/cancel` → `@CacheEvict("slots", allEntries=true)`.
+  - **Bug tìm & fix:** `GenericJackson2JsonRedisSerializer` mặc định dùng `ObjectMapper` không có `JavaTimeModule` → lỗi 500 khi serialize `List<LocalTime>`. Phải tự tạo `ObjectMapper` có `JavaTimeModule` + `activateDefaultTyping`. Ngoài ra Spring Boot 4 đổi JSON mặc định sang Jackson 3 (`tools.jackson`), nhưng `GenericJackson2JsonRedisSerializer` (spring-data-redis) vẫn dùng Jackson 2 cổ điển (`com.fasterxml.jackson`) — phải thêm `jackson-databind`/`jackson-datatype-jsr310` 2.x làm dependency riêng.
+- Đã verify thực tế qua curl: slots cache hit/evict đúng, dentists/services cache đúng, register-staff 403 khi không phải ADMIN, book dùng đúng patient từ JWT.
+
+**Phase 5 — Đang làm (bắt đầu 2026-07-06):**
+- [x] Ownership authorization cho `GET /appointments/{id}` và `PATCH /appointments/{id}/cancel`:
+  - `AppointmentService.assertCanAccess()`: ADMIN luôn được phép; PATIENT chỉ được phép trên lịch hẹn của chính mình (so khớp `Authentication.getName()` với `appointment.getPatient().getUser().getEmail()`); DENTIST được **xem** (không được huỷ) lịch hẹn được giao cho mình.
+  - Không đủ quyền → ném `AccessDeniedException` → `GlobalExceptionHandler` trả 403 (tái dùng handler có sẵn từ Phase 3).
+  - `findById`/`cancel` ở `AppointmentService` và `AppointmentController` đổi signature nhận thêm `Authentication`.
+  - Test case: `src/test/http/features/appointment-ownership.http` (folder mới `features/` — mỗi tính năng từ đây có 1 file `.http` riêng, không dồn hết vào `appointments.http`).
+  - Verify qua curl thực tế: A xem/huỷ được lịch của A (200), B xem/huỷ lịch của A bị chặn (403), ADMIN xem được mọi lịch (200). Regression: `/appointments` ADMIN-only và không token vẫn đúng như cũ.
+  - **Lưu ý môi trường:** máy dev Windows này có dải port `7987-8086` bị OS reserve (`netsh interface ipv4 show excludedportrange protocol=tcp`) nên `server.port=8080` mặc định luôn bind fail — verify phải chạy tạm với `--args="--server.port=9090"`. Không phải bug code, nhưng cần nhớ khi verify lần sau trên máy này.
+- [x] Thay `GenericJackson2JsonRedisSerializer` (deprecated) → `GenericJacksonJsonRedisSerializer` (spring-data-redis 4.1.0, gói `org.springframework.data.redis.serializer`, dùng Jackson 3 `tools.jackson.databind.ObjectMapper` thay vì Jackson 2 cổ điển):
+  - `CacheConfig`: dùng `GenericJacksonJsonRedisSerializer.builder().enableUnsafeDefaultTyping().build()` — không cần tự tạo `ObjectMapper` + `JavaTimeModule` thủ công nữa vì Jackson 3 `jackson-databind` đã hỗ trợ `java.time` sẵn trong core (không cần module riêng như Jackson 2's `jackson-datatype-jsr310`).
+  - Xoá 2 dependency `com.fasterxml.jackson.core:jackson-databind:2.21.4` và `com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.21.4` khỏi `build.gradle` — chỉ tồn tại vì serializer cũ, không còn cần thiết (Jackson 2.x vẫn có mặt gián tiếp qua `jjwt-jackson`, không do project khai báo nữa).
+  - Verify qua curl: `/slots` (chứa `List<LocalTime>`), `/dentists`, `/services` — cache miss lần đầu, cache hit lần 2 trả đúng dữ liệu; `docker exec dental-redis redis-cli KEYS '*'` xác nhận đúng 3 key (`slots::`, `dentists-active::all`, `services-active::all`); log không còn lỗi serialize.
+- [x] Endpoint ADMIN cập nhật `active` cho Dentist/DentalService (quyết định: nên có — nếu không thì dentist/service nghỉ việc vẫn hiện trong danh sách active vô thời hạn):
+  - `PATCH /api/dentists/{id}/active` và `PATCH /api/services/{id}/active`, body `{"active": true|false}`, `@PreAuthorize("hasRole('ADMIN')")`.
+  - DTO dùng chung `UpdateActiveRequest` (chỉ 1 field `active`) cho cả 2 endpoint.
+  - `DentistService.updateActive` / `DentalServiceCatalogService.updateActive`: `@CacheEvict(allEntries = true)` đúng cache tương ứng (`dentists-active` / `services-active`) sau khi save — bắt buộc vì key cache cố định `'all'`.
+  - Verify qua curl: PATIENT gọi bị 403; ADMIN tắt active → dentist/service biến mất khỏi list ngay (cache evict đúng, không stale); bật lại → xuất hiện lại; id không tồn tại → 400.
+
+**Phase 5 hoàn thành 2026-07-07.** Cả 3 mục đều đã xong, build + verify pass toàn bộ.
+
+**Phase 6 — chưa có kế hoạch cụ thể, cần bạn xác nhận scope trước khi làm tiếp.**

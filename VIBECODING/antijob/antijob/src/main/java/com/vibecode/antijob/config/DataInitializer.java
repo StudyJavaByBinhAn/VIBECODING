@@ -3,11 +3,13 @@ package com.vibecode.antijob.config;
 import com.vibecode.antijob.entity.*;
 import com.vibecode.antijob.enums.AppointmentStatus;
 import com.vibecode.antijob.enums.Gender;
+import com.vibecode.antijob.enums.Role;
 import com.vibecode.antijob.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +29,22 @@ public class DataInitializer {
     private final WorkScheduleRepository workScheduleRepository;
     private final ClinicSettingsRepository clinicSettingsRepository;
     private final AppointmentRepository appointmentRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    @EventListener(ApplicationReadyEvent.class)
+    @Transactional
+    public void seedAdmin() {
+        if (userRepository.existsByEmail("admin@vibecode.local")) {
+            return;
+        }
+        userRepository.save(User.builder()
+                .email("admin@vibecode.local")
+                .password(passwordEncoder.encode("admin123"))
+                .role(Role.ADMIN)
+                .build());
+        log.info("Đã seed tài khoản ADMIN mặc định: admin@vibecode.local / admin123 (đổi mật khẩu này trước khi lên prod)");
+    }
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional

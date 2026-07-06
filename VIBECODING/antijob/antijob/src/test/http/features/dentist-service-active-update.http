@@ -1,0 +1,155 @@
+### Feature: ADMIN cập nhật active cho Dentist/DentalService (PATCH /api/dentists/{id}/active, /api/services/{id}/active)
+### Mục tiêu: chỉ ADMIN được đổi; cache dentists-active/services-active phải bị evict sau khi đổi
+### (list active phải phản ánh đúng, không stale từ cache cũ).
+
+@baseUrl = http://localhost:8080/api
+
+### ========================================
+### 0. Đăng nhập ADMIN + PATIENT (test 403)
+### ========================================
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@vibecode.local",
+  "password": "admin123"
+}
+
+###
+
+@adminToken = {{loginAdmin.response.body.$.data.token}}
+
+###
+
+# @name registerPatient
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "not-admin@example.com",
+  "password": "secret123",
+  "fullName": "Not Admin",
+  "phone": "0900000099"
+}
+
+###
+
+# @name loginPatient
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "not-admin@example.com",
+  "password": "secret123"
+}
+
+###
+
+@patientToken = {{loginPatient.response.body.$.data.token}}
+
+### ========================================
+### 1. Danh sách dentist active trước khi đổi (cache populate, dentist id=2 phải có mặt)
+### ========================================
+GET {{baseUrl}}/dentists
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 2. PATIENT (không phải ADMIN) đổi active của dentist → expect 403
+### ========================================
+PATCH {{baseUrl}}/dentists/2/active
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "active": false
+}
+
+###
+
+### ========================================
+### 3. ADMIN tắt active dentist id=2 → expect 200, evict cache dentists-active
+### ========================================
+PATCH {{baseUrl}}/dentists/2/active
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "active": false
+}
+
+###
+
+### ========================================
+### 4. Danh sách dentist active sau khi tắt → dentist id=2 KHÔNG được xuất hiện nữa
+### (nếu vẫn xuất hiện → cache chưa evict đúng, bug)
+### ========================================
+GET {{baseUrl}}/dentists
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 5. ADMIN bật lại active dentist id=2 (dọn dẹp state cho lần chạy sau)
+### ========================================
+PATCH {{baseUrl}}/dentists/2/active
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "active": true
+}
+
+###
+
+### ========================================
+### 6. Tương tự cho DentalService — tắt active service id=2
+### ========================================
+PATCH {{baseUrl}}/services/2/active
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "active": false
+}
+
+###
+
+### ========================================
+### 7. Danh sách service active sau khi tắt → service id=2 KHÔNG xuất hiện
+### ========================================
+GET {{baseUrl}}/services
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 8. Bật lại active service id=2 (dọn dẹp state)
+### ========================================
+PATCH {{baseUrl}}/services/2/active
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "active": true
+}
+
+###
+
+### ========================================
+### 9. Cập nhật id không tồn tại → expect lỗi (400, IllegalArgumentException)
+### ========================================
+PATCH {{baseUrl}}/dentists/9999/active
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "active": false
+}
+
+###

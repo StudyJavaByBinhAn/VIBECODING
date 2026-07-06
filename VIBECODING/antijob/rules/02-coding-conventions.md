@@ -15,8 +15,11 @@
 ```java
 @Entity
 @Table(name = "appointments")
-@EntityListeners(AuditingEntityListener.class)
-public class Appointment extends BaseEntity {
+@Data @Builder @NoArgsConstructor @AllArgsConstructor
+public class Appointment {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
     @ManyToOne(fetch = FetchType.LAZY)       // Luôn LAZY
     @JoinColumn(name = "patient_id")
     private Patient patient;
@@ -24,12 +27,12 @@ public class Appointment extends BaseEntity {
     @Enumerated(EnumType.STRING)              // Không dùng ORDINAL
     private AppointmentStatus status;
 
-    @CreatedDate private LocalDateTime createdAt;
-    @LastModifiedDate private LocalDateTime updatedAt;
+    @CreationTimestamp @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
 }
 ```
 
-- Tất cả entity kế thừa `BaseEntity` (id, createdAt, updatedAt).
+- Mỗi entity tự khai báo `@Id` (chưa có `BaseEntity` chung).
 - `@ManyToOne` → luôn `LAZY`. Cần eager → dùng `@EntityGraph` hoặc `JOIN FETCH`.
 - Không dùng `CascadeType.ALL` trừ khi hiểu rõ impact.
 
@@ -53,9 +56,9 @@ public record AppointmentResponse(
 ) {}
 ```
 
-- Dùng Java `record` cho immutable DTO.
+- DTO hiện tại dùng class Lombok (`@Data`), có thể chuyển sang `record` khi thêm validation.
 - Không expose `password`, `passwordHash`.
-- Map Entity ↔ DTO qua MapStruct. Không trả entity từ controller.
+- Map Entity ↔ DTO thủ công (chưa có MapStruct). Không trả entity từ controller.
 
 ## API Response Format
 
@@ -80,9 +83,7 @@ Mọi endpoint trả `ApiResponse<T>` — kể cả error.
 
 Tất cả xử lý tại `@RestControllerAdvice GlobalExceptionHandler`.
 
-## Caching
+## Caching (chưa triển khai)
 
-- `@Cacheable` / `@CacheEvict` / `@CachePut` — không gọi Redis client trực tiếp.
-- Key pattern: `slots:{date}:{serviceId}` · `dentists:active` · `services:active`
-- TTL: slot = 5 phút, master data = 30 phút–1 giờ.
-- Evict khi data thay đổi (đặt/huỷ lịch, sửa bác sĩ/dịch vụ).
+Redis/`@Cacheable` chưa có trong project — khi làm, dùng `@Cacheable`/`@CacheEvict`/`@CachePut`,
+không gọi Redis client trực tiếp. Key pattern dự kiến: `slots:{date}:{serviceId}` · `dentists:active` · `services:active`.
