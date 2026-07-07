@@ -1,0 +1,95 @@
+### Feature: Huỷ lịch phải trước cancel_before_hours (12 giờ) giờ hẹn — Phase 6
+### Case "huỷ trong vòng 12h" cần lịch hẹn nằm trong 12h tới tính từ lúc chạy file này —
+### không thể cố định ngày giờ tĩnh, nên request 5 dùng ngày HÔM NAY + giờ gần hiện tại.
+### Đổi @nearDate/@nearTime cho khớp "hôm nay, trong vòng 12h tới" khi chạy thật.
+
+@baseUrl = http://localhost:8080/api
+@farDate = 2026-07-20
+
+### ========================================
+### 0. Đăng nhập + đăng ký patient test
+### ========================================
+# @name registerPatient
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "cancel-deadline@example.com",
+  "password": "secret123",
+  "fullName": "Cancel Deadline Test",
+  "phone": "0900000021"
+}
+
+###
+
+# @name loginPatient
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "cancel-deadline@example.com",
+  "password": "secret123"
+}
+
+###
+
+@patientToken = {{loginPatient.response.body.$.data.token}}
+
+### ========================================
+### 1. Đặt lịch xa (đủ điều kiện huỷ đủ sớm) → expect 200
+### ========================================
+# @name bookFar
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "dentistId": 1,
+  "serviceId": 1,
+  "appointmentDate": "{{farDate}}",
+  "startTime": "09:00",
+  "notes": "cancel far enough"
+}
+
+###
+
+@farApptId = {{bookFar.response.body.$.data.id}}
+
+### ========================================
+### 2. Huỷ lịch xa → expect 200 (đủ sớm, ngoài 12h)
+### ========================================
+PATCH {{baseUrl}}/appointments/{{farApptId}}/cancel
+Authorization: Bearer {{patientToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 3. Đặt lịch GẦN (trong vòng 12h tới tính từ lúc chạy) → sửa ngày/giờ cho khớp thực tế
+### Ví dụ: nếu đang chạy lúc 10:00 hôm nay, đặt lịch 20:00 CÙNG ngày (còn 10h, trong ngưỡng 12h)
+### ========================================
+# @name bookNear
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "dentistId": 1,
+  "serviceId": 1,
+  "appointmentDate": "2026-07-13",
+  "startTime": "20:00",
+  "notes": "cancel within deadline - sửa ngày giờ cho khớp lúc chạy thật"
+}
+
+###
+
+@nearApptId = {{bookNear.response.body.$.data.id}}
+
+### ========================================
+### 4. Huỷ lịch gần → expect 400 "Không thể huỷ lịch trong vòng 12 giờ trước giờ hẹn"
+### ========================================
+PATCH {{baseUrl}}/appointments/{{nearApptId}}/cancel
+Authorization: Bearer {{patientToken}}
+Accept: application/json
+
+###

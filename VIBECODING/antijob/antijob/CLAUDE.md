@@ -4,14 +4,14 @@
 
 ## Project
 
-- **Stack:** Java 21 · Spring Boot 4.1.0 · Gradle · Lombok · JPA · PostgreSQL · Flyway · Redis · Spring Security · JWT
+- **Stack:** Java 21 · Spring Boot 4.1.0 · Gradle · Lombok · JPA · PostgreSQL · Flyway · Redis · Spring Security · JWT · MapStruct
 - **Package:** `com.vibecode.antijob`
 - **Mô tả:** REST API đặt lịch hẹn nha khoa — bệnh nhân đặt lịch, chọn bác sĩ, admin quản lý
 
 ## Structure
 
 ```
-entity/    enums/    dto/    service/    controller/    exception/    config/
+entity/    enums/    dto/    mapper/    service/    controller/    exception/    config/
 ```
 
 Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java` (đặt/huỷ lịch)
@@ -72,7 +72,7 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 | `DentalService` | id, name, description, durationMinutes, price, isActive |
 | `WorkSchedule` | id, dentist, dayOfWeek, startTime, endTime, isActive |
 | `Appointment` | id, patient, dentist, service, appointmentDate, startTime, endTime, status, notes, createdAt, updatedAt |
-| `ClinicSettings` | id, clinicName, openTime, closeTime, slotDurationMinutes, maxAdvanceBookingDays |
+| `ClinicSettings` | id, clinicName, openTime, closeTime, slotDurationMinutes, maxAdvanceBookingDays, bufferMinutes, breakStart, breakEnd, cancelBeforeHours, maxPendingAppointments |
 
 **Enums:** `Role` (PATIENT/DENTIST/ADMIN/RECEPTIONIST) · `AppointmentStatus` (PENDING/CONFIRMED/CANCELLED/COMPLETED/NO_SHOW) · `Gender` (MALE/FEMALE/OTHER)
 
@@ -148,4 +148,34 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 
 **Phase 5 hoàn thành 2026-07-07.** Cả 3 mục đều đã xong, build + verify pass toàn bộ.
 
-**Phase 6 — chưa có kế hoạch cụ thể, cần bạn xác nhận scope trước khi làm tiếp.**
+**Việc phát sinh — Migrate sang MapStruct (2026-07-07, trước khi bắt đầu Phase 6):**
+- [x] Thêm dependency: `org.mapstruct:mapstruct:1.6.3` (implementation), `mapstruct-processor:1.6.3` (annotationProcessor), `lombok-mapstruct-binding:0.2.0` (annotationProcessor — bắt buộc để MapStruct processor thấy được getter Lombok sinh ra trong cùng vòng compile, thiếu dòng này sẽ lỗi biên dịch mapper).
+- [x] Package mới `mapper/`: `AppointmentMapper` (dùng `@Mapping(target=..., source=...)` cho 3 field flatten từ nested entity: `patientName`←`patient.fullName`, `dentistName`←`dentist.fullName`, `serviceName`←`service.name`; các field còn lại tên khớp trực tiếp nên MapStruct tự map không cần khai báo), `DentistMapper`, `DentalServiceMapper` (2 mapper sau field khớp tên hoàn toàn, không cần `@Mapping`).
+- [x] Xoá 3 method `toResponse()` thủ công (`AppointmentService`, `DentistService`, `DentalServiceCatalogService`), inject mapper qua constructor thay thế.
+- [x] `AuthService` **không đổi** — build `AuthResponse` từ token/role, không phải map trực tiếp 1 entity, không phù hợp MapStruct.
+- [x] Verify: `./gradlew build` pass (mapper impl sinh đúng tại `build/generated/sources/annotationProcessor/java/main/com/vibecode/antijob/mapper/`), curl `/api/appointments`, `/api/dentists`, `/api/services` xác nhận JSON response giữ nguyên hình dạng như trước migrate.
+- [x] Cập nhật `rules/02-coding-conventions.md` (dòng về DTO mapping) + Stack/Structure ở đầu file này.
+
+**Phase 6 — Hoàn thành 2026-07-07:**
+
+Đóng toàn bộ khoảng cách giữa `rules/03-domain-rules.md`/`04-dos-and-donts.md` và code thực tế. Default values các config mới đã chốt trực tiếp với user: `buffer_minutes=10`, `break_start/end=12:00/13:00`, `cancel_before_hours=12`, `max_pending_appointments=3`; `close_time` giữ nguyên giá trị seed sẵn `17:00`.
+
+- [x] **1. Migration `V2__clinic_settings_business_rules.sql`** — thêm 5 cột vào `clinic_settings` (`buffer_minutes`, `break_start`, `break_end` nullable, `cancel_before_hours`, `max_pending_appointments`), `UPDATE` set break 12:00–13:00 cho row seed hiện có. `ClinicSettings` entity thêm field tương ứng.
+- [x] **2. `SlotService`** — áp dụng đúng công thức domain rule đầy đủ:
+  - Trừ `buffer_minutes` giữa 2 ca đã đặt (đệm cả 2 phía overlap check).
+  - Loại slot rơi vào `break_start`–`break_end` (bỏ qua nếu null — clinic không nghỉ trưa).
+  - Chặn cứng slot không vượt `close_time`, kể cả khi `work_schedule` của dentist cho phép muộn hơn.
+  - Loại slot quá khứ khi `date == hôm nay` (so với `LocalTime.now(clock)`).
+  - Inject `java.time.Clock` qua constructor (bean mới `config/TimeConfig.java`) để mock "now" trong test — không đổi public signature `getAvailableSlots`, cache key không bị ảnh hưởng.
+  - `SlotServiceTest` (10 test, Mockito + `Clock.fixed`): no-schedule→rỗng, normal case, overlap không buffer, buffer loại slot liền kề 2 phía, break loại đúng slot, không break→không loại, vượt close_time bị cắt dù work_schedule cho phép, hôm nay loại slot quá khứ, ngày tương lai không áp past-filter, thiếu `ClinicSettings`→fallback default (khác hành vi hard-fail của `AppointmentService`, có chủ đích — 2 method độc lập).
+- [x] **3. `AppointmentService.cancel()`** — chặn huỷ nếu còn dưới `cancel_before_hours` giờ nữa là đến giờ hẹn (`LocalDateTime.now(clock).plusHours(...)` so với `appointmentDate+startTime`), ném `IllegalArgumentException` (400, tái dùng convention có sẵn, không phải case 409).
+- [x] **4. `AppointmentService.book()`**:
+  - Giới hạn `max_pending_appointments`/patient (query mới `countByPatientIdAndStatus`) — check ngay sau resolve patient, trước khi đụng tới dentist/service (`verifyNoInteractions` xác nhận trong test).
+  - `is_active` check cho dentist — áp dụng **cả 2 nhánh** (dentistId tường minh dùng `.filter(Dentist::isActive)`, và auto-assign vốn đã chỉ query `findByActiveTrue()`).
+  - Auto-assign dentist khi `dentistId == null` (đã nullable sẵn, không cần đổi DTO) — **không** gọi lại `SlotService` (quyết định của user, chấp nhận trùng lặp nhỏ logic buffer) mà tự lọc: dentist active + có `WorkSchedule` phù hợp ngày/giờ + không conflict (đệm buffer qua `findConflictingForUpdate`), tie-break bằng query mới `countByDentistIdAndAppointmentDateAndStatusNot` (ít lịch nhất trong ngày thắng).
+  - Validate chung `validateBookingWindow()` (ngày ≥ hôm nay, ngoài giờ nghỉ trưa, không vượt close_time) áp dụng 1 lần trước khi rẽ nhánh dentist, dùng cho cả 2 nhánh.
+  - `clinic_settings` rỗng → hard-fail `IllegalStateException` ở mọi rule mới (khác `SlotService` fallback — quyết định của user).
+  - `AppointmentServiceTest` (15 test, Mockito): happy path, conflict, ngày quá khứ, break window, sau close_time, max-pending đạt ngưỡng, dentist tường minh inactive, auto-assign 1/nhiều/0 candidate (tie-break đúng), settings rỗng, cancel đủ sớm/trong hạn/status sai/ownership.
+- [x] **5. Test case `.http` mới trong `features/`**: `slot-buffer-break-close-time.http`, `appointment-cancel-deadline.http`, `appointment-max-pending.http`, `appointment-auto-assign.http`, `appointment-invalid-window.http`.
+- [x] **6. Đồng bộ docs** — `rules/03-domain-rules.md` cập nhật bảng Business Rules + ghi chú "đã implement Phase 6"; `CLAUDE.md` Entity Design table thêm 5 field `ClinicSettings` mới.
+- [x] **7. Verify toàn bộ** — `./gradlew build` pass với 25 unit test mới (`SlotServiceTest` 10, `AppointmentServiceTest` 15) + `contextLoads()`. `bootRun --args="--server.port=9090"` + curl thực tế xác nhận đúng: V2 migration tự chạy sạch trên DB đã baseline; buffer/break đúng slot bị loại (kể cả với data thật có sẵn appointment cũ); ngày quá khứ/giờ nghỉ trưa/sau đóng cửa đều 400 đúng message; max-pending 400 ở lịch PENDING thứ 4; huỷ trong vòng 12h thực (so với giờ hệ thống thật) bị 400, huỷ đủ sớm 200; auto-assign chọn đúng dentist ít lịch hơn (BS B thay vì BS A đang bận). Log không có lỗi ngoài dự kiến.

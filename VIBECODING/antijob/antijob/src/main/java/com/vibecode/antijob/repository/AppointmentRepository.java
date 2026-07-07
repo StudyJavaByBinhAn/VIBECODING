@@ -35,4 +35,10 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     List<Appointment> findByDentistIdAndAppointmentDateAndStatusNot(
             Long dentistId, LocalDate date, AppointmentStatus status
     );
+
+    // Đếm lịch PENDING của 1 patient (giới hạn max_pending_appointments)
+    long countByPatientIdAndStatus(Long patientId, AppointmentStatus status);
+
+    // Đếm lịch của 1 dentist trong ngày, không tính CANCELLED (tie-break auto-assign)
+    long countByDentistIdAndAppointmentDateAndStatusNot(Long dentistId, LocalDate date, AppointmentStatus status);
 }

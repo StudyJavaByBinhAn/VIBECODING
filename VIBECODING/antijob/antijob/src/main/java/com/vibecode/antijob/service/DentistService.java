@@ -2,6 +2,7 @@ package com.vibecode.antijob.service;
 
 import com.vibecode.antijob.dto.DentistResponse;
 import com.vibecode.antijob.entity.Dentist;
+import com.vibecode.antijob.mapper.DentistMapper;
 import com.vibecode.antijob.repository.DentistRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -17,12 +18,13 @@ import java.util.stream.Collectors;
 public class DentistService {
 
     private final DentistRepository dentistRepository;
+    private final DentistMapper dentistMapper;
 
     @Transactional(readOnly = true)
     @Cacheable(cacheNames = "dentists-active", key = "'all'")
     public List<DentistResponse> findAllActive() {
         return dentistRepository.findByActiveTrue().stream()
-                .map(this::toResponse)
+                .map(dentistMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -32,15 +34,6 @@ public class DentistService {
         Dentist dentist = dentistRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy bác sĩ id=" + id));
         dentist.setActive(active);
-        return toResponse(dentistRepository.save(dentist));
-    }
-
-    private DentistResponse toResponse(Dentist d) {
-        return DentistResponse.builder()
-                .id(d.getId())
-                .fullName(d.getFullName())
-                .specialization(d.getSpecialization())
-                .bio(d.getBio())
-                .build();
+        return dentistMapper.toResponse(dentistRepository.save(dentist));
     }
 }

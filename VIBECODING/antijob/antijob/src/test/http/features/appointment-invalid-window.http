@@ -1,0 +1,84 @@
+### Feature: Validate thời điểm đặt lịch — ngày quá khứ / giờ nghỉ trưa / sau giờ đóng cửa (Phase 6)
+
+@baseUrl = http://localhost:8080/api
+
+### ========================================
+### 0. Đăng ký + đăng nhập patient test
+### ========================================
+# @name registerPatient
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "invalid-window@example.com",
+  "password": "secret123",
+  "fullName": "Invalid Window Test",
+  "phone": "0900000025"
+}
+
+###
+
+# @name loginPatient
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "invalid-window@example.com",
+  "password": "secret123"
+}
+
+###
+
+@patientToken = {{loginPatient.response.body.$.data.token}}
+
+### ========================================
+### 1. Đặt lịch ngày quá khứ → expect 400 "Không thể đặt lịch cho ngày trong quá khứ"
+### ========================================
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "dentistId": 1,
+  "serviceId": 1,
+  "appointmentDate": "2020-01-01",
+  "startTime": "09:00",
+  "notes": "ngày quá khứ"
+}
+
+###
+
+### ========================================
+### 2. Đặt lịch giờ rơi vào giờ nghỉ trưa (12:00-13:00) → expect 400 "Không nhận lịch trong giờ nghỉ trưa"
+### ========================================
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "dentistId": 1,
+  "serviceId": 1,
+  "appointmentDate": "2026-07-13",
+  "startTime": "12:15",
+  "notes": "trong giờ nghỉ trưa"
+}
+
+###
+
+### ========================================
+### 3. Đặt lịch giờ kết thúc sau giờ đóng cửa (17:00) → expect 400 "Không nhận lịch sau giờ đóng cửa"
+### Dịch vụ id=1 dài 30 phút → bắt đầu 16:45 sẽ kết thúc 17:15, vượt 17:00.
+### ========================================
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "dentistId": 1,
+  "serviceId": 1,
+  "appointmentDate": "2026-07-13",
+  "startTime": "16:45",
+  "notes": "sau giờ đóng cửa"
+}
+
+###

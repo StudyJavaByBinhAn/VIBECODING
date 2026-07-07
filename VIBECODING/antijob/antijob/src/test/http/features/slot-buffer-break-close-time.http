@@ -1,0 +1,89 @@
+### Feature: SlotService áp dụng buffer_minutes, break_start/break_end, close_time (Phase 6)
+### Dentist id=1 (BS. Nguyễn Văn A) làm việc Thứ 2-6, 08:00-17:00.
+### ClinicSettings (seed + V2 migration): buffer=10p, break 12:00-13:00, close_time=17:00.
+### Đổi @date sang 1 ngày Thứ 2-6 trong tương lai nếu chạy sau ngày ví dụ bên dưới.
+
+@baseUrl = http://localhost:8080/api
+@date = 2026-07-13
+
+### ========================================
+### 0. Đăng nhập ADMIN
+### ========================================
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@vibecode.local",
+  "password": "admin123"
+}
+
+###
+
+@adminToken = {{loginAdmin.response.body.$.data.token}}
+
+### ========================================
+### 1. Slot trống dentist 1 ngày {{date}} — TRƯỚC khi có booking nào
+### Kỳ vọng: có slot 11:30, KHÔNG có slot 12:00/12:30 (break), có slot 13:00,
+### slot cuối cùng là 16:30 (17:00-17:30 bị cắt vì vượt close_time dù work_schedule cho phép tới 17:00 vừa khít).
+### ========================================
+GET {{baseUrl}}/slots?dentistId=1&date={{date}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 2. Đặt lịch 09:00 (dịch vụ 30p, id=1) để tạo booking minh hoạ buffer
+### ========================================
+# @name registerPatient
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "slot-test@example.com",
+  "password": "secret123",
+  "fullName": "Slot Test",
+  "phone": "0900000020"
+}
+
+###
+
+# @name loginPatient
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "slot-test@example.com",
+  "password": "secret123"
+}
+
+###
+
+@patientToken = {{loginPatient.response.body.$.data.token}}
+
+###
+
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "dentistId": 1,
+  "serviceId": 1,
+  "appointmentDate": "{{date}}",
+  "startTime": "09:00",
+  "notes": "test buffer"
+}
+
+###
+
+### ========================================
+### 3. Slot trống lại sau khi có booking 09:00-09:30
+### Kỳ vọng: 08:30, 09:00, 09:30 đều KHÔNG còn (buffer 10p đệm 2 phía), 10:00 vẫn còn.
+### ========================================
+GET {{baseUrl}}/slots?dentistId=1&date={{date}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###

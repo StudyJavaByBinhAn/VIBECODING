@@ -58,7 +58,7 @@ public record AppointmentResponse(
 
 - DTO hiện tại dùng class Lombok (`@Data`), có thể chuyển sang `record` khi thêm validation.
 - Không expose `password`, `passwordHash`.
-- Map Entity ↔ DTO thủ công (chưa có MapStruct). Không trả entity từ controller.
+- Map Entity ↔ DTO qua MapStruct (`mapper/` package, interface `@Mapper(componentModel = "spring")`, inject như bean thường qua constructor). Không trả entity từ controller. Field tên khác nhau/nested (vd. `AppointmentResponse.patientName` ← `Appointment.patient.fullName`) dùng `@Mapping(target = ..., source = ...)`; field tên khớp trực tiếp thì để MapStruct tự map, không cần khai báo.
 
 ## API Response Format
 

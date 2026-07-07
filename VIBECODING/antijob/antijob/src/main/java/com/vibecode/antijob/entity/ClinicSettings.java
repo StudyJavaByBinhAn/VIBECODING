@@ -34,4 +34,19 @@ public class ClinicSettings {
 
     @Column(name = "max_advance_booking_days")
     private int maxAdvanceBookingDays;
+
+    @Column(name = "buffer_minutes")
+    private int bufferMinutes;
+
+    @Column(name = "break_start")
+    private LocalTime breakStart;
+
+    @Column(name = "break_end")
+    private LocalTime breakEnd;
+
+    @Column(name = "cancel_before_hours")
+    private int cancelBeforeHours;
+
+    @Column(name = "max_pending_appointments")
+    private int maxPendingAppointments;
 }

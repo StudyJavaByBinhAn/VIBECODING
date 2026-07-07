@@ -1,0 +1,106 @@
+### Feature: Auto-assign dentist khi không gửi dentistId (Phase 6)
+### Ngày 2026-07-13 (Thứ 2) cả BS. Nguyễn Văn A (id=1) và BS. Trần Thị B (id=2) đều làm việc 08:00-17:00.
+
+@baseUrl = http://localhost:8080/api
+@date = 2026-07-13
+
+### ========================================
+### 0. Đăng ký + đăng nhập 2 patient test (patient A đặt trước để làm dentist 1 "bận" hơn)
+### ========================================
+# @name registerA
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "auto-assign-a@example.com",
+  "password": "secret123",
+  "fullName": "Auto Assign A",
+  "phone": "0900000023"
+}
+
+###
+
+# @name loginA
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "auto-assign-a@example.com",
+  "password": "secret123"
+}
+
+###
+
+@tokenA = {{loginA.response.body.$.data.token}}
+
+###
+
+# @name registerB
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "auto-assign-b@example.com",
+  "password": "secret123",
+  "fullName": "Auto Assign B",
+  "phone": "0900000024"
+}
+
+###
+
+# @name loginB
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "auto-assign-b@example.com",
+  "password": "secret123"
+}
+
+###
+
+@tokenB = {{loginB.response.body.$.data.token}}
+
+### ========================================
+### 1. Patient A đặt trực tiếp dentist id=1 lúc 09:00 → dentist 1 giờ có 1 lịch trong ngày
+### ========================================
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{tokenA}}
+Content-Type: application/json
+
+{
+  "dentistId": 1,
+  "serviceId": 1,
+  "appointmentDate": "{{date}}",
+  "startTime": "09:00",
+  "notes": "làm dentist 1 bận hơn"
+}
+
+###
+
+### ========================================
+### 2. Patient B đặt KHÔNG gửi dentistId lúc 10:30 (giờ này cả 2 dentist đều rảnh)
+### Kỳ vọng: hệ thống auto-assign chọn dentist id=2 (ít lịch hơn trong ngày, dentist 1 đã có 1 lịch)
+### ========================================
+# @name bookAutoAssign
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{tokenB}}
+Content-Type: application/json
+
+{
+  "serviceId": 1,
+  "appointmentDate": "{{date}}",
+  "startTime": "10:30",
+  "notes": "auto-assign - kỳ vọng chọn dentist id=2"
+}
+
+###
+
+### ========================================
+### 3. Xem lại lịch vừa đặt để xác nhận dentistName gán đúng
+### ========================================
+GET {{baseUrl}}/appointments/{{bookAutoAssign.response.body.$.data.id}}
+Authorization: Bearer {{tokenB}}
+Accept: application/json
+
+###

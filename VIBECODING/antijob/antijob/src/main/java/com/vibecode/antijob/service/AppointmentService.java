@@ -3,14 +3,19 @@ package com.vibecode.antijob.service;
 import com.vibecode.antijob.dto.AppointmentRequest;
 import com.vibecode.antijob.dto.AppointmentResponse;
 import com.vibecode.antijob.entity.Appointment;
+import com.vibecode.antijob.entity.ClinicSettings;
 import com.vibecode.antijob.entity.Dentist;
 import com.vibecode.antijob.entity.DentalService;
 import com.vibecode.antijob.entity.Patient;
+import com.vibecode.antijob.entity.WorkSchedule;
 import com.vibecode.antijob.enums.AppointmentStatus;
+import com.vibecode.antijob.mapper.AppointmentMapper;
 import com.vibecode.antijob.repository.AppointmentRepository;
+import com.vibecode.antijob.repository.ClinicSettingsRepository;
 import com.vibecode.antijob.repository.DentalServiceRepository;
 import com.vibecode.antijob.repository.DentistRepository;
 import com.vibecode.antijob.repository.PatientRepository;
+import com.vibecode.antijob.repository.WorkScheduleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.security.access.AccessDeniedException;
@@ -19,7 +24,12 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -31,11 +41,15 @@ public class AppointmentService {
     private final PatientRepository patientRepository;
     private final DentistRepository dentistRepository;
     private final DentalServiceRepository dentalServiceRepository;
+    private final WorkScheduleRepository workScheduleRepository;
+    private final ClinicSettingsRepository clinicSettingsRepository;
+    private final AppointmentMapper appointmentMapper;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public List<AppointmentResponse> findAll() {
         return appointmentRepository.findAll().stream()
-                .map(this::toResponse)
+                .map(appointmentMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -44,26 +58,39 @@ public class AppointmentService {
         Appointment appt = appointmentRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lịch hẹn id=" + id));
         assertCanAccess(appt, authentication, true);
-        return toResponse(appt);
+        return appointmentMapper.toResponse(appt);
     }
 
     @Transactional
     @CacheEvict(cacheNames = "slots", allEntries = true)
     public AppointmentResponse book(AppointmentRequest req, String patientEmail) {
+        ClinicSettings settings = getSettingsOrThrow();
+
         Patient patient = patientRepository.findByUserEmail(patientEmail)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy hồ sơ bệnh nhân cho tài khoản này"));
 
-        Dentist dentist = dentistRepository.findById(req.getDentistId())
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy bác sĩ id=" + req.getDentistId()));
+        if (appointmentRepository.countByPatientIdAndStatus(patient.getId(), AppointmentStatus.PENDING)
+                >= settings.getMaxPendingAppointments()) {
+            throw new IllegalArgumentException(
+                    "Đã đạt giới hạn " + settings.getMaxPendingAppointments() + " lịch hẹn đang chờ");
+        }
 
         DentalService service = dentalServiceRepository.findById(req.getServiceId())
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy dịch vụ id=" + req.getServiceId()));
 
         LocalTime endTime = req.getStartTime().plusMinutes(service.getDurationMinutes());
+        validateBookingWindow(req.getAppointmentDate(), req.getStartTime(), endTime, settings);
+
+        Dentist dentist = (req.getDentistId() != null)
+                ? dentistRepository.findById(req.getDentistId())
+                        .filter(Dentist::isActive)
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "Không tìm thấy bác sĩ id=" + req.getDentistId() + " hoặc bác sĩ không còn hoạt động"))
+                : autoAssignDentist(req, endTime, settings);
 
         // Pessimistic lock + kiểm tra conflict
         List<Appointment> conflicts = appointmentRepository.findConflictingForUpdate(
-                req.getDentistId(), req.getAppointmentDate(), req.getStartTime(), endTime
+                dentist.getId(), req.getAppointmentDate(), req.getStartTime(), endTime
         );
         if (!conflicts.isEmpty()) {
             throw new IllegalStateException("Slot đã được đặt, vui lòng chọn giờ khác");
@@ -80,7 +107,7 @@ public class AppointmentService {
                 .notes(req.getNotes())
                 .build();
 
-        return toResponse(appointmentRepository.save(appt));
+        return appointmentMapper.toResponse(appointmentRepository.save(appt));
     }
 
     @Transactional
@@ -94,8 +121,57 @@ public class AppointmentService {
             throw new IllegalArgumentException("Chỉ có thể huỷ lịch ở trạng thái PENDING hoặc CONFIRMED");
         }
 
+        ClinicSettings settings = getSettingsOrThrow();
+        LocalDateTime appointmentDateTime = LocalDateTime.of(appt.getAppointmentDate(), appt.getStartTime());
+        if (LocalDateTime.now(clock).plusHours(settings.getCancelBeforeHours()).isAfter(appointmentDateTime)) {
+            throw new IllegalArgumentException(
+                    "Không thể huỷ lịch trong vòng " + settings.getCancelBeforeHours() + " giờ trước giờ hẹn");
+        }
+
         appt.setStatus(AppointmentStatus.CANCELLED);
-        return toResponse(appointmentRepository.save(appt));
+        return appointmentMapper.toResponse(appointmentRepository.save(appt));
+    }
+
+    private ClinicSettings getSettingsOrThrow() {
+        return clinicSettingsRepository.findAll().stream().findFirst()
+                .orElseThrow(() -> new IllegalStateException("Chưa cấu hình clinic_settings"));
+    }
+
+    private void validateBookingWindow(LocalDate date, LocalTime startTime, LocalTime endTime, ClinicSettings settings) {
+        if (date.isBefore(LocalDate.now(clock))) {
+            throw new IllegalArgumentException("Không thể đặt lịch cho ngày trong quá khứ");
+        }
+        if (settings.getBreakStart() != null && settings.getBreakEnd() != null
+                && startTime.isBefore(settings.getBreakEnd()) && endTime.isAfter(settings.getBreakStart())) {
+            throw new IllegalArgumentException("Không nhận lịch trong giờ nghỉ trưa");
+        }
+        if (endTime.isAfter(settings.getCloseTime())) {
+            throw new IllegalArgumentException("Không nhận lịch sau giờ đóng cửa " + settings.getCloseTime());
+        }
+    }
+
+    private Dentist autoAssignDentist(AppointmentRequest req, LocalTime endTime, ClinicSettings settings) {
+        DayOfWeek dayOfWeek = req.getAppointmentDate().getDayOfWeek();
+        LocalTime paddedStart = req.getStartTime().minusMinutes(settings.getBufferMinutes());
+        LocalTime paddedEnd = endTime.plusMinutes(settings.getBufferMinutes());
+
+        List<Dentist> candidates = dentistRepository.findByActiveTrue().stream()
+                .filter(d -> workScheduleRepository.findByDentistIdAndDayOfWeek(d.getId(), dayOfWeek)
+                        .filter(WorkSchedule::isActive)
+                        .filter(ws -> !req.getStartTime().isBefore(ws.getStartTime()) && !endTime.isAfter(ws.getEndTime()))
+                        .isPresent())
+                .filter(d -> appointmentRepository.findConflictingForUpdate(
+                        d.getId(), req.getAppointmentDate(), paddedStart, paddedEnd).isEmpty())
+                .toList();
+
+        if (candidates.isEmpty()) {
+            throw new IllegalArgumentException("Không có bác sĩ nào rảnh vào thời gian yêu cầu");
+        }
+
+        return candidates.stream()
+                .min(Comparator.comparingLong(d -> appointmentRepository.countByDentistIdAndAppointmentDateAndStatusNot(
+                        d.getId(), req.getAppointmentDate(), AppointmentStatus.CANCELLED)))
+                .orElseThrow();
     }
 
     /**
@@ -117,20 +193,5 @@ public class AppointmentService {
         if (!isOwnerPatient && !isAssignedDentist) {
             throw new AccessDeniedException("Không có quyền truy cập lịch hẹn id=" + appt.getId());
         }
-    }
-
-    private AppointmentResponse toResponse(Appointment a) {
-        return AppointmentResponse.builder()
-                .id(a.getId())
-                .patientName(a.getPatient().getFullName())
-                .dentistName(a.getDentist().getFullName())
-                .serviceName(a.getService().getName())
-                .appointmentDate(a.getAppointmentDate())
-                .startTime(a.getStartTime())
-                .endTime(a.getEndTime())
-                .status(a.getStatus())
-                .notes(a.getNotes())
-                .createdAt(a.getCreatedAt())
-                .build();
     }
 }

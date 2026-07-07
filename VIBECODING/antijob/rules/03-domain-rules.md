@@ -13,6 +13,9 @@ Slot trống = Lịch làm việc BS − Lịch hẹn đã đặt − Giờ ngh�
 - Loại slot rơi vào `break_start` → `break_end`.
 - Không trả slot quá khứ.
 - Không trả slot ngoài `work_schedule` của bác sĩ.
+- Không trả slot vượt `close_time` của `ClinicSettings`, kể cả khi `work_schedule` của bác sĩ cho phép muộn hơn (lớp chặn cứng riêng, phòng dữ liệu work_schedule cấu hình sai).
+
+**Trạng thái: đã implement đầy đủ ở Phase 6 (`SlotService`, `AppointmentService`), có unit test (`SlotServiceTest`, `AppointmentServiceTest`).**
 
 ## Race Condition — Pessimistic Lock
 
@@ -38,13 +41,13 @@ public AppointmentResponse bookAppointment(AppointmentRequest req, Long patientI
 | Rule | Điều kiện |
 |------|-----------|
 | Ngày hẹn | `>= today` |
-| Giờ hẹn | Nằm trong `work_schedule` của BS |
-| Bác sĩ | `is_active = true` |
+| Giờ hẹn | Nằm trong `work_schedule` của BS, không rơi vào `break_start`-`break_end`, không vượt `close_time` |
+| Bác sĩ | `is_active = true` — áp dụng cả khi client gửi `dentistId` tường minh lẫn khi auto-assign |
 | Dịch vụ | `is_active = true` |
 | Huỷ lịch | Chỉ `PENDING` hoặc `CONFIRMED` |
-| Huỷ lịch | Trước ít nhất N giờ (config) |
-| Auto-assign | Chọn BS ít appointment nhất trong ngày |
-| Giới hạn | Max N pending appointments / patient (config) |
+| Huỷ lịch | Trước ít nhất `cancel_before_hours` giờ (config, mặc định 12) |
+| Auto-assign | Chọn BS ít appointment nhất trong ngày, trong số các BS active có `work_schedule` phù hợp + không conflict (đệm `buffer_minutes`) tại giờ yêu cầu |
+| Giới hạn | Max `max_pending_appointments` (config, mặc định 3) lịch PENDING / patient |
 
 ## Appointment Status Flow
 
