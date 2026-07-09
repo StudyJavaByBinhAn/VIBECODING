@@ -39,51 +39,61 @@ public class Appointment {
 ## DTO Pattern
 
 ```java
-// Request — dùng record + validation
-public record AppointmentRequest(
-    @NotNull Long serviceId,
-    Long dentistId,                           // nullable = auto-assign
-    @NotNull @FutureOrPresent LocalDate date,
-    @NotNull LocalTime startTime,
-    String notes
-) {}
+// Request — class Lombok @Data + jakarta.validation, không phải record
+@Data
+public class AppointmentRequest {
+    @NotNull
+    private Long serviceId;
 
-// Response — không chứa sensitive data
-public record AppointmentResponse(
-    Long id, LocalDate date, LocalTime startTime,
-    LocalTime endTime, AppointmentStatus status,
-    DentistSummary dentist, ServiceSummary service
-) {}
+    // nullable có chủ đích — null nghĩa là auto-assign dentist (Phase 6)
+    private Long dentistId;
+
+    @NotNull
+    private LocalDate appointmentDate;
+
+    @NotNull
+    private LocalTime startTime;
+
+    @Size(max = 500)
+    private String notes;
+}
 ```
 
-- DTO hiện tại dùng class Lombok (`@Data`), có thể chuyển sang `record` khi thêm validation.
+- Mọi request DTO dùng class Lombok (`@Data`), KHÔNG dùng `record` — quyết định giữ nguyên style này khi thêm validation (Phase 7), không đổi sang record.
+- Validate ở tầng DTO bằng `jakarta.validation.constraints.*` (`@NotNull`, `@NotBlank`, `@Email`, `@Size`...) + `@Valid` trên tham số `@RequestBody` ở controller. Lỗi validation được `GlobalExceptionHandler` bắt qua `MethodArgumentNotValidException` → 400.
 - Không expose `password`, `passwordHash`.
 - Map Entity ↔ DTO qua MapStruct (`mapper/` package, interface `@Mapper(componentModel = "spring")`, inject như bean thường qua constructor). Không trả entity từ controller. Field tên khác nhau/nested (vd. `AppointmentResponse.patientName` ← `Appointment.patient.fullName`) dùng `@Mapping(target = ..., source = ...)`; field tên khớp trực tiếp thì để MapStruct tự map, không cần khai báo.
+- List endpoint có khả năng phình to theo thời gian (vd. `GET /api/appointments`) dùng `Pageable`/`Page<T>`, map sang `dto/PageResponse<T>` (`content`, `page`, `size`, `totalElements`, `totalPages`) thay vì trả `List<T>` trần. List nhỏ, bị chặn quy mô và đang cache key cố định (`/api/dentists`, `/api/services`) thì giữ nguyên `List<T>`, không cần phân trang.
 
 ## API Response Format
 
 ```java
-public record ApiResponse<T>(
-    boolean success, String message, T data,
-    LocalDateTime timestamp, List<String> errors
-) {}
+@Data @Builder @NoArgsConstructor @AllArgsConstructor
+public class ApiResponse<T> {
+    private boolean success;
+    private String message;
+    private T data;
+}
 ```
 
-Mọi endpoint trả `ApiResponse<T>` — kể cả error.
+Mọi endpoint trả `ApiResponse<T>` — kể cả error (khi đó `data = null`, `message` chứa nội dung lỗi). Không có field `timestamp`/`errors` riêng — nhiều lỗi validation trên nhiều field được gộp vào 1 chuỗi `message` (nối bằng `"; "`), không phải mảng.
 
 ## Exception → HTTP Status
 
-| Exception | Status |
-|-----------|--------|
-| `ResourceNotFoundException` | 404 |
-| `SlotAlreadyBookedException` | 409 |
-| `InvalidAppointmentException` | 400 |
-| `AccessDeniedException` | 403 |
-| `MethodArgumentNotValid` | 400 |
+Vocabulary thật dùng exception JDK/Spring có sẵn, KHÔNG có custom exception class riêng nào trong project:
 
-Tất cả xử lý tại `@RestControllerAdvice GlobalExceptionHandler`.
+| Exception | Status | Ghi chú |
+|-----------|--------|---------|
+| `IllegalArgumentException` | 400 | Lỗi business rule / not-found (vd. "Không tìm thấy lịch hẹn id=...") |
+| `MethodArgumentNotValidException` | 400 | Lỗi validation tầng DTO (`@Valid` fail) |
+| `AccessDeniedException` | 403 | Không đủ quyền / không phải chủ sở hữu resource |
+| `IllegalStateException` | 409 | Xung đột (vd. "Slot đã được đặt") |
+| `RuntimeException` | 500 | Catch-all cuối cùng cho lỗi không lường trước |
 
-## Caching (chưa triển khai)
+Tất cả xử lý tại `@RestControllerAdvice GlobalExceptionHandler` (`exception/GlobalExceptionHandler.java`).
 
-Redis/`@Cacheable` chưa có trong project — khi làm, dùng `@Cacheable`/`@CacheEvict`/`@CachePut`,
-không gọi Redis client trực tiếp. Key pattern dự kiến: `slots:{date}:{serviceId}` · `dentists:active` · `services:active`.
+## Caching
+
+Redis đã triển khai từ Phase 4 (`config/CacheConfig.java`, `GenericJacksonJsonRedisSerializer`). Dùng `@Cacheable`/`@CacheEvict` ở tầng Service, không gọi Redis client trực tiếp. Cache name thật đang dùng:
+- `slots` (key `#dentistId + ':' + #date`, TTL 5 phút) — evict khi book/cancel appointment.
+- `dentists-active` / `services-active` (key cố định `'all'`, TTL 1 giờ) — evict khi ADMIN đổi `active`.

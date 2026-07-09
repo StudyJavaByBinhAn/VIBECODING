@@ -6,6 +6,7 @@ import com.vibecode.antijob.dto.RegisterRequest;
 import com.vibecode.antijob.dto.RegisterStaffRequest;
 import com.vibecode.antijob.exception.ApiResponse;
 import com.vibecode.antijob.service.AuthService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,18 +23,18 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<AuthResponse>> register(@RequestBody RegisterRequest req) {
+    public ResponseEntity<ApiResponse<AuthResponse>> register(@Valid @RequestBody RegisterRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Đăng ký thành công", authService.register(req)));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<AuthResponse>> login(@RequestBody LoginRequest req) {
+    public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Đăng nhập thành công", authService.login(req)));
     }
 
     @PostMapping("/register-staff")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<AuthResponse>> registerStaff(@RequestBody RegisterStaffRequest req) {
+    public ResponseEntity<ApiResponse<AuthResponse>> registerStaff(@Valid @RequestBody RegisterStaffRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Tạo tài khoản thành công", authService.registerStaff(req)));
     }
 }

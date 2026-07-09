@@ -100,10 +100,12 @@ Content-Type: application/json
 ###
 
 ### ========================================
-### 1. Lấy tất cả lịch hẹn — CHỈ ADMIN
+### 1. Lấy tất cả lịch hẹn (có phân trang) — CHỈ ADMIN
 ### Dùng {{token}} (PATIENT) → expect 403. Đổi sang {{adminToken}} để test 200.
+### Response: data = {content, page, size, totalElements, totalPages} (PageResponse) — không còn là mảng trần.
+### Mặc định page=0, size=20, sort=appointmentDate DESC nếu không truyền query param.
 ### ========================================
-GET {{baseUrl}}/appointments
+GET {{baseUrl}}/appointments?page=0&size=20
 Authorization: Bearer {{adminToken}}
 Accept: application/json
 

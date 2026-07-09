@@ -2,6 +2,7 @@ package com.vibecode.antijob.service;
 
 import com.vibecode.antijob.dto.AppointmentRequest;
 import com.vibecode.antijob.dto.AppointmentResponse;
+import com.vibecode.antijob.dto.PageResponse;
 import com.vibecode.antijob.entity.Appointment;
 import com.vibecode.antijob.entity.ClinicSettings;
 import com.vibecode.antijob.entity.Dentist;
@@ -18,6 +19,8 @@ import com.vibecode.antijob.repository.PatientRepository;
 import com.vibecode.antijob.repository.WorkScheduleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -31,7 +34,6 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -47,10 +49,15 @@ public class AppointmentService {
     private final Clock clock;
 
     @Transactional(readOnly = true)
-    public List<AppointmentResponse> findAll() {
-        return appointmentRepository.findAll().stream()
-                .map(appointmentMapper::toResponse)
-                .collect(Collectors.toList());
+    public PageResponse<AppointmentResponse> findAll(Pageable pageable) {
+        Page<AppointmentResponse> page = appointmentRepository.findAll(pageable).map(appointmentMapper::toResponse);
+        return PageResponse.<AppointmentResponse>builder()
+                .content(page.getContent())
+                .page(page.getNumber())
+                .size(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .build();
     }
 
     @Transactional(readOnly = true)

@@ -1,0 +1,94 @@
+### Feature: Pagination cho GET /api/appointments (thêm hôm nay)
+### data giờ là PageResponse: {content, page, size, totalElements, totalPages} — không còn mảng trần.
+### Mặc định (không truyền page/size): page=0, size=20, sort=appointmentDate DESC.
+
+@baseUrl = http://localhost:8080/api
+
+### ========================================
+### 0. Đăng nhập ADMIN
+### ========================================
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@vibecode.local",
+  "password": "admin123"
+}
+
+###
+
+@adminToken = {{loginAdmin.response.body.$.data.token}}
+
+### ========================================
+### 1. Mặc định không truyền page/size → page=0, size=20
+### ========================================
+GET {{baseUrl}}/appointments
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 2. page=0, size=5 → content tối đa 5 phần tử
+### ========================================
+GET {{baseUrl}}/appointments?page=0&size=5
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 3. page=1, size=5 → trang tiếp theo, content khác trang 0 (trừ khi tổng ít hơn 6 bản ghi)
+### ========================================
+GET {{baseUrl}}/appointments?page=1&size=5
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 4. size vượt quá tổng số bản ghi → totalPages=1, content = toàn bộ
+### ========================================
+GET {{baseUrl}}/appointments?page=0&size=1000
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 5. PATIENT gọi endpoint này → expect 403 (ADMIN-only, không đổi so với trước khi thêm pagination)
+### ========================================
+# @name registerPatient
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "pagination-test@example.com",
+  "password": "secret123",
+  "fullName": "Pagination Test",
+  "phone": "0900000031"
+}
+
+###
+
+# @name loginPatient
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "pagination-test@example.com",
+  "password": "secret123"
+}
+
+###
+
+@patientToken = {{loginPatient.response.body.$.data.token}}
+
+###
+
+GET {{baseUrl}}/appointments?page=0&size=5
+Authorization: Bearer {{patientToken}}
+Accept: application/json
+
+###

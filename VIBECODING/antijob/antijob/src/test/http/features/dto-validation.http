@@ -1,0 +1,155 @@
+### Feature: Validation tầng DTO (jakarta.validation + @Valid) — thêm hôm nay
+### Mọi case dưới đây expect 400 với message dạng "field: lỗi cụ thể" (gộp nhiều lỗi bằng "; ").
+
+@baseUrl = http://localhost:8080/api
+
+### ========================================
+### 0. Đăng nhập ADMIN (để có token đặt lịch test case book)
+### ========================================
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@vibecode.local",
+  "password": "admin123"
+}
+
+###
+
+@adminToken = {{loginAdmin.response.body.$.data.token}}
+
+### ========================================
+### 0b. Đăng ký + đăng nhập patient test (cần role PATIENT để book appointment)
+### ========================================
+# @name registerPatient
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "dto-validation@example.com",
+  "password": "secret123",
+  "fullName": "DTO Validation Test",
+  "phone": "0900000030"
+}
+
+###
+
+# @name loginPatient
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "dto-validation@example.com",
+  "password": "secret123"
+}
+
+###
+
+@patientToken = {{loginPatient.response.body.$.data.token}}
+
+### ========================================
+### 1. Register thiếu email (rỗng) → expect 400
+### ========================================
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "",
+  "password": "secret123",
+  "fullName": "Test",
+  "phone": "0900000000"
+}
+
+###
+
+### ========================================
+### 2. Register email sai định dạng → expect 400
+### ========================================
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "not-an-email",
+  "password": "secret123",
+  "fullName": "Test",
+  "phone": "0900000000"
+}
+
+###
+
+### ========================================
+### 3. Register password quá ngắn (< 6 ký tự) → expect 400
+### ========================================
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "valid-format@example.com",
+  "password": "123",
+  "fullName": "Test",
+  "phone": "0900000000"
+}
+
+###
+
+### ========================================
+### 4. Login thiếu password → expect 400
+### ========================================
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@vibecode.local",
+  "password": ""
+}
+
+###
+
+### ========================================
+### 5. Đặt lịch thiếu serviceId → expect 400
+### ========================================
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "dentistId": 1,
+  "appointmentDate": "2026-08-01",
+  "startTime": "09:00",
+  "notes": "thiếu serviceId"
+}
+
+###
+
+### ========================================
+### 6. Đặt lịch thiếu appointmentDate và startTime cùng lúc → expect 400 gộp 2 lỗi
+### ========================================
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "dentistId": 1,
+  "serviceId": 1,
+  "notes": "thiếu ngày giờ"
+}
+
+###
+
+### ========================================
+### 7. Đặt lịch KHÔNG gửi dentistId → vẫn hợp lệ ở tầng validation (auto-assign, expect KHÔNG phải lỗi 400 validation
+### — có thể vẫn fail vì business rule khác như break/close-time, nhưng không phải do thiếu dentistId)
+### ========================================
+POST {{baseUrl}}/appointments
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "serviceId": 1,
+  "appointmentDate": "2026-08-01",
+  "startTime": "09:00",
+  "notes": "auto-assign vẫn qua validation"
+}
+
+###

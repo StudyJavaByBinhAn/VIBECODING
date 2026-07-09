@@ -8,20 +8,22 @@
 | ORM | Spring Data JPA · Hibernate |
 | DB | PostgreSQL 16 · Flyway |
 | Auth | Spring Security · JWT (jjwt) — Phase 3 |
-| Validation | Jakarta Bean Validation |
-| Mapping | Thủ công (Entity → DTO), chưa dùng MapStruct |
-| Test | JUnit 5 |
+| Cache | Redis (Phase 4) |
+| Validation | Jakarta Bean Validation (Phase 7) |
+| Mapping | MapStruct (`mapper/` package) |
+| Test | JUnit 5 · Mockito |
 | Dev | Lombok |
 
 ## Project Structure
 
 ```
 src/main/java/com/vibecode/antijob/
-├── config/       # DataInitializer, SecurityConfig (Phase 3)
+├── config/       # DataInitializer, SecurityConfig, CacheConfig, TimeConfig
 ├── entity/       # JPA entities
 ├── enums/        # Role, AppointmentStatus, Gender
 ├── repository/   # Spring Data JPA repositories
 ├── dto/          # Request/Response DTOs (flat, chưa tách request/response package)
+├── mapper/       # MapStruct @Mapper interface (Entity ↔ DTO)
 ├── service/      # SlotService (core), AppointmentService
 ├── controller/   # REST endpoints
 └── exception/    # ApiResponse + GlobalExceptionHandler
@@ -36,6 +38,7 @@ src/main/java/com/vibecode/antijob/
 ./gradlew bootRun                        # Run app
 docker run -d --name dental-db -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=dental_db -p 5432:5432 postgres:16   # Start Postgres
+docker run -d --name dental-redis -p 6379:6379 redis:7               # Start Redis (bắt buộc — app dùng @Cacheable)
 ```
 
 ## Key Files

@@ -4,6 +4,7 @@ import com.vibecode.antijob.dto.DentistResponse;
 import com.vibecode.antijob.dto.UpdateActiveRequest;
 import com.vibecode.antijob.exception.ApiResponse;
 import com.vibecode.antijob.service.DentistService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,7 +26,7 @@ public class DentistController {
 
     @PatchMapping("/{id}/active")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<DentistResponse>> updateActive(@PathVariable Long id, @RequestBody UpdateActiveRequest req) {
+    public ResponseEntity<ApiResponse<DentistResponse>> updateActive(@PathVariable Long id, @Valid @RequestBody UpdateActiveRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Cập nhật trạng thái thành công", dentistService.updateActive(id, req.isActive())));
     }
 }

@@ -1,0 +1,67 @@
+name: antijob CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "VIBECODING/antijob/**"
+      - ".github/workflows/antijob-ci.yml"
+  pull_request:
+    paths:
+      - "VIBECODING/antijob/**"
+      - ".github/workflows/antijob-ci.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: VIBECODING/antijob/antijob
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: dental_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d dental_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build + test (bao gồm Flyway migration thật trên Postgres service container)
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: dental_db
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+        run: ./gradlew build --console=plain
