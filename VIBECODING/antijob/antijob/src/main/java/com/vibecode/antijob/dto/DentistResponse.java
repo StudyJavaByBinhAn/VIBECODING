@@ -12,6 +12,9 @@ import lombok.NoArgsConstructor;
 public class DentistResponse {
     private Long id;
     private String fullName;
+    private String phone;
     private String specialization;
+    private String licenseNumber;
     private String bio;
+    private boolean active;
 }

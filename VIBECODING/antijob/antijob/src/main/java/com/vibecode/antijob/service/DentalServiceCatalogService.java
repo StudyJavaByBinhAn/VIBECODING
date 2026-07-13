@@ -1,5 +1,6 @@
 package com.vibecode.antijob.service;
 
+import com.vibecode.antijob.dto.CreateDentalServiceRequest;
 import com.vibecode.antijob.dto.DentalServiceResponse;
 import com.vibecode.antijob.entity.DentalService;
 import com.vibecode.antijob.mapper.DentalServiceMapper;
@@ -34,6 +35,19 @@ public class DentalServiceCatalogService {
         DentalService service = dentalServiceRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy dịch vụ id=" + id));
         service.setActive(active);
+        return dentalServiceMapper.toResponse(dentalServiceRepository.save(service));
+    }
+
+    @Transactional
+    @CacheEvict(cacheNames = "services-active", allEntries = true)
+    public DentalServiceResponse create(CreateDentalServiceRequest req) {
+        DentalService service = DentalService.builder()
+                .name(req.getName())
+                .description(req.getDescription())
+                .durationMinutes(req.getDurationMinutes())
+                .price(req.getPrice())
+                .active(true)
+                .build();
         return dentalServiceMapper.toResponse(dentalServiceRepository.save(service));
     }
 }

@@ -38,6 +38,12 @@
 - Không commit khi chưa được yêu cầu rõ ràng trong phiên làm việc (áp dụng cho AI agent hỗ trợ code).
 - Không dùng `--no-verify`/bỏ qua hook trừ khi có lý do rõ ràng và được xác nhận.
 
+## Security (Phase 9)
+
+- Không hardcode secret/credential mới trong code — dùng `@Value("${...}")` đọc từ env var, default (nếu có) chỉ nên hợp lý cho dev, không phải giá trị "an toàn giả".
+- Test `SPRING_PROFILES_ACTIVE=prod` trước khi merge bất kỳ thay đổi nào liên quan tới `SecurityConfig`/`JwtUtil`/`DataInitializer` — `StartupSecurityValidator` sẽ chặn app start nếu `JWT_SECRET` chưa đổi khỏi default, đây là hành vi cố ý, không phải bug.
+- Filter mới thêm vào `SecurityConfig` filter chain: dùng `addFilterBefore(filter, <well-known Spring Security filter class>)` (vd. `UsernamePasswordAuthenticationFilter.class`), KHÔNG anchor vào 1 filter custom khác — Spring Security throw `IllegalArgumentException` runtime nếu anchor filter chưa có vị trí xác định trong chain (gặp lỗi này lúc thêm `RateLimitFilter`, xem `CLAUDE.md` Phase 9 mục 7).
+
 ## CI
 
 `.github/workflows/antijob-ci.yml` (ở root repo git, không nằm trong thư mục `antijob/antijob/`) tự chạy `./gradlew build` với Postgres + Redis service container trên mỗi push/PR đổi code trong `antijob/`. Migration Flyway mới (file `V*.sql`) sẽ được test thật trong CI, không chỉ local — nếu migration lỗi, CI đỏ trước khi merge. Sửa file workflow này khi cần đổi bước CI, không sửa trực tiếp trên GitHub UI.

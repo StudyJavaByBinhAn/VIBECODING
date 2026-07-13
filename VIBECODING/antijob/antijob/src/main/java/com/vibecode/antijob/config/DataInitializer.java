@@ -7,8 +7,11 @@ import com.vibecode.antijob.enums.Role;
 import com.vibecode.antijob.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,19 +34,36 @@ public class DataInitializer {
     private final AppointmentRepository appointmentRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final Environment environment;
+
+    @Value("${ADMIN_EMAIL:admin@vibecode.local}")
+    private String adminEmail;
+
+    @Value("${ADMIN_PASSWORD:}")
+    private String adminPassword;
 
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void seedAdmin() {
-        if (userRepository.existsByEmail("admin@vibecode.local")) {
+        if (userRepository.existsByEmail(adminEmail)) {
             return;
         }
+
+        boolean isProd = environment.acceptsProfiles(Profiles.of("prod"));
+        if (isProd && adminPassword.isBlank()) {
+            log.warn("Bỏ qua seed tài khoản ADMIN ở profile prod vì ADMIN_PASSWORD chưa được set. "
+                    + "Set biến môi trường ADMIN_PASSWORD (và tuỳ chọn ADMIN_EMAIL) rồi khởi động lại để tạo tài khoản ADMIN đầu tiên.");
+            return;
+        }
+
+        String passwordToUse = adminPassword.isBlank() ? "admin123" : adminPassword;
         userRepository.save(User.builder()
-                .email("admin@vibecode.local")
-                .password(passwordEncoder.encode("admin123"))
+                .email(adminEmail)
+                .password(passwordEncoder.encode(passwordToUse))
                 .role(Role.ADMIN)
                 .build());
-        log.info("Đã seed tài khoản ADMIN mặc định: admin@vibecode.local / admin123 (đổi mật khẩu này trước khi lên prod)");
+        log.info("Đã seed tài khoản ADMIN: {} (mật khẩu {} — đổi trước khi lên prod nếu dùng giá trị mặc định)",
+                adminEmail, adminPassword.isBlank() ? "mặc định admin123" : "từ ADMIN_PASSWORD");
     }
 
     @EventListener(ApplicationReadyEvent.class)

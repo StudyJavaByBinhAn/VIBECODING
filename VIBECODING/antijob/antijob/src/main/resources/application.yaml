@@ -35,3 +35,12 @@ jwt:
   # base64, mặc định chỉ dùng cho dev — BẮT BUỘC set JWT_SECRET riêng khi deploy thật (xem .env.example)
   secret: ${JWT_SECRET:dGhpcy1pcy1hLWRldi1vbmx5LXNlY3JldC1rZXktY2hhbmdlLWluLXByb2Q=}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000} # 24h
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never

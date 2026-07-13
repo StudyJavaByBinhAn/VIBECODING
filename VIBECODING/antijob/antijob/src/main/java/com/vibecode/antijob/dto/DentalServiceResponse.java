@@ -17,4 +17,5 @@ public class DentalServiceResponse {
     private String description;
     private int durationMinutes;
     private BigDecimal price;
+    private boolean active;
 }

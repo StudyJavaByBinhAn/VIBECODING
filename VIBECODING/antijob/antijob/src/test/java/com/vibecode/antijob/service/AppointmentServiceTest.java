@@ -122,6 +122,21 @@ class AppointmentServiceTest {
         return auth;
     }
 
+    private Authentication receptionistAuth() {
+        Authentication auth = mock(Authentication.class);
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_RECEPTIONIST"));
+        doReturn(authorities).when(auth).getAuthorities();
+        return auth;
+    }
+
+    private Authentication dentistAuth(String email) {
+        Authentication auth = mock(Authentication.class);
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_DENTIST"));
+        doReturn(authorities).when(auth).getAuthorities();
+        when(auth.getName()).thenReturn(email);
+        return auth;
+    }
+
     // ---------- book() ----------
 
     @Test
@@ -371,5 +386,162 @@ class AppointmentServiceTest {
         assertThatThrownBy(() -> appointmentService.cancel(1L, patientAuth("someone-else@example.com")))
                 .isInstanceOf(AccessDeniedException.class);
         verify(appointmentRepository, never()).save(any());
+    }
+
+    // ---------- confirm() ----------
+
+    @Test
+    void confirm_pendingAppointment_byAdmin_succeeds() {
+        Appointment appt = Appointment.builder().id(1L).status(AppointmentStatus.PENDING)
+                .patient(patient).dentist(activeDentist).build();
+
+        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
+
+        appointmentService.confirm(1L, adminAuth());
+
+        ArgumentCaptor<Appointment> captor = ArgumentCaptor.forClass(Appointment.class);
+        verify(appointmentRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(AppointmentStatus.CONFIRMED);
+    }
+
+    @Test
+    void confirm_byReceptionist_succeeds() {
+        Appointment appt = Appointment.builder().id(1L).status(AppointmentStatus.PENDING)
+                .patient(patient).dentist(activeDentist).build();
+
+        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
+
+        appointmentService.confirm(1L, receptionistAuth());
+
+        ArgumentCaptor<Appointment> captor = ArgumentCaptor.forClass(Appointment.class);
+        verify(appointmentRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(AppointmentStatus.CONFIRMED);
+    }
+
+    @Test
+    void confirm_byAssignedDentist_succeeds() {
+        Appointment appt = Appointment.builder().id(1L).status(AppointmentStatus.PENDING)
+                .patient(patient).dentist(activeDentist).build();
+
+        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
+
+        appointmentService.confirm(1L, dentistAuth(activeDentist.getUser().getEmail()));
+
+        verify(appointmentRepository).save(any(Appointment.class));
+    }
+
+    @Test
+    void confirm_byUnassignedDentist_throwsAccessDenied() {
+        Appointment appt = Appointment.builder().id(1L).status(AppointmentStatus.PENDING)
+                .patient(patient).dentist(activeDentist).build();
+
+        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
+
+        assertThatThrownBy(() -> appointmentService.confirm(1L, dentistAuth("other-dentist@example.com")))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(appointmentRepository, never()).save(any());
+    }
+
+    @Test
+    void confirm_byPatient_throwsAccessDenied() {
+        Appointment appt = Appointment.builder().id(1L).status(AppointmentStatus.PENDING)
+                .patient(patient).dentist(activeDentist).build();
+
+        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
+
+        assertThatThrownBy(() -> appointmentService.confirm(1L, patientAuth(PATIENT_EMAIL)))
+                .isInstanceOf(AccessDeniedException.class);
+        verify(appointmentRepository, never()).save(any());
+    }
+
+    @Test
+    void confirm_notPending_throwsIllegalArgument() {
+        Appointment appt = Appointment.builder().id(1L).status(AppointmentStatus.CANCELLED)
+                .patient(patient).dentist(activeDentist).build();
+
+        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
+
+        assertThatThrownBy(() -> appointmentService.confirm(1L, adminAuth()))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(appointmentRepository, never()).save(any());
+    }
+
+    // ---------- complete() ----------
+
+    @Test
+    void complete_confirmedAppointment_succeeds() {
+        Appointment appt = Appointment.builder().id(1L).status(AppointmentStatus.CONFIRMED)
+                .patient(patient).dentist(activeDentist).build();
+
+        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
+
+        appointmentService.complete(1L, adminAuth());
+
+        ArgumentCaptor<Appointment> captor = ArgumentCaptor.forClass(Appointment.class);
+        verify(appointmentRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(AppointmentStatus.COMPLETED);
+    }
+
+    @Test
+    void complete_stillPending_throwsIllegalArgument() {
+        Appointment appt = Appointment.builder().id(1L).status(AppointmentStatus.PENDING)
+                .patient(patient).dentist(activeDentist).build();
+
+        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
+
+        assertThatThrownBy(() -> appointmentService.complete(1L, adminAuth()))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(appointmentRepository, never()).save(any());
+    }
+
+    // ---------- markNoShow() ----------
+
+    @Test
+    void markNoShow_confirmedAppointment_succeeds() {
+        Appointment appt = Appointment.builder().id(1L).status(AppointmentStatus.CONFIRMED)
+                .patient(patient).dentist(activeDentist).build();
+
+        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
+
+        appointmentService.markNoShow(1L, receptionistAuth());
+
+        ArgumentCaptor<Appointment> captor = ArgumentCaptor.forClass(Appointment.class);
+        verify(appointmentRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(AppointmentStatus.NO_SHOW);
+    }
+
+    @Test
+    void markNoShow_alreadyCompleted_throwsIllegalArgument() {
+        Appointment appt = Appointment.builder().id(1L).status(AppointmentStatus.COMPLETED)
+                .patient(patient).dentist(activeDentist).build();
+
+        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
+
+        assertThatThrownBy(() -> appointmentService.markNoShow(1L, adminAuth()))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(appointmentRepository, never()).save(any());
+    }
+
+    // ---------- findById() với RECEPTIONIST ----------
+
+    @Test
+    void findById_byReceptionist_notOwner_succeeds() {
+        Appointment appt = Appointment.builder().id(1L).status(AppointmentStatus.PENDING)
+                .patient(patient).dentist(activeDentist).build();
+
+        when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
+        when(appointmentMapper.toResponse(appt)).thenReturn(AppointmentResponse.builder().build());
+
+        appointmentService.findById(1L, receptionistAuth());
     }
 }

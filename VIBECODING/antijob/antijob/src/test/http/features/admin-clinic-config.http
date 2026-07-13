@@ -1,0 +1,224 @@
+### Feature: Admin CRUD cho ClinicSettings + WorkSchedule + full edit Dentist/DentalService (Phase 11)
+### Mục tiêu: ADMIN quản lý cấu hình phòng khám, giờ làm việc bác sĩ, hồ sơ bác sĩ/dịch vụ đầy đủ.
+### PATIENT không có quyền trên các endpoint này.
+### Chạy tuần tự từ trên xuống.
+
+@baseUrl = http://localhost:8080/api
+
+### ========================================
+### 0a. Đăng nhập ADMIN (seed sẵn)
+### ========================================
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@vibecode.local",
+  "password": "admin123"
+}
+
+###
+
+@adminToken = {{loginAdmin.response.body.$.data.token}}
+
+### ========================================
+### 0b. Đăng ký + đăng nhập PATIENT (dùng để test 403)
+### ========================================
+# @name registerPatient
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "config-patient@example.com",
+  "password": "secret123",
+  "fullName": "Patient Config Test",
+  "phone": "0900000040"
+}
+
+###
+
+# @name loginPatient
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "config-patient@example.com",
+  "password": "secret123"
+}
+
+###
+
+@patientToken = {{loginPatient.response.body.$.data.token}}
+
+### ========================================
+### 1. PATIENT xem ClinicSettings → expect 403
+### ========================================
+GET {{baseUrl}}/clinic-settings
+Authorization: Bearer {{patientToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 2. ADMIN xem ClinicSettings → expect 200
+### ========================================
+GET {{baseUrl}}/clinic-settings
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 3. ADMIN cập nhật ClinicSettings → expect 200
+### ========================================
+PUT {{baseUrl}}/clinic-settings
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "clinicName": "Nha Khoa VibeCode",
+  "openTime": "08:00",
+  "closeTime": "17:00",
+  "slotDurationMinutes": 30,
+  "maxAdvanceBookingDays": 30,
+  "bufferMinutes": 10,
+  "breakStart": "12:00",
+  "breakEnd": "13:00",
+  "cancelBeforeHours": 12,
+  "maxPendingAppointments": 3
+}
+
+###
+
+### ========================================
+### 4. ADMIN tạo lịch làm việc mới cho dentist id=1, ngày SUNDAY → expect 200
+### ========================================
+# @name createSchedule
+POST {{baseUrl}}/dentists/1/work-schedules
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "dayOfWeek": "SUNDAY",
+  "startTime": "09:00",
+  "endTime": "12:00",
+  "active": true
+}
+
+###
+
+@scheduleId = {{createSchedule.response.body.$.data.id}}
+
+### ========================================
+### 5. ADMIN tạo lại lịch làm việc trùng ngày SUNDAY → expect 400
+### ========================================
+POST {{baseUrl}}/dentists/1/work-schedules
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "dayOfWeek": "SUNDAY",
+  "startTime": "09:00",
+  "endTime": "12:00",
+  "active": true
+}
+
+###
+
+### ========================================
+### 6. ADMIN xem danh sách lịch làm việc của dentist id=1 → expect 200
+### ========================================
+GET {{baseUrl}}/dentists/1/work-schedules
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 7. ADMIN cập nhật lịch làm việc vừa tạo → expect 200
+### ========================================
+PUT {{baseUrl}}/work-schedules/{{scheduleId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "startTime": "09:30",
+  "endTime": "11:30",
+  "active": false
+}
+
+###
+
+### ========================================
+### 8. ADMIN xoá lịch làm việc vừa tạo → expect 200
+### ========================================
+DELETE {{baseUrl}}/work-schedules/{{scheduleId}}
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+###
+
+### ========================================
+### 9. PATIENT tạo lịch làm việc → expect 403
+### ========================================
+POST {{baseUrl}}/dentists/1/work-schedules
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "dayOfWeek": "SUNDAY",
+  "startTime": "09:00",
+  "endTime": "12:00",
+  "active": true
+}
+
+###
+
+### ========================================
+### 10. ADMIN sửa hồ sơ đầy đủ dentist id=1 → expect 200
+### ========================================
+PATCH {{baseUrl}}/dentists/1
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "fullName": "BS. Nguyễn Văn A (cập nhật)",
+  "phone": "0901000099",
+  "specialization": "Chỉnh nha nâng cao",
+  "licenseNumber": "DN-001",
+  "bio": "Cập nhật bio bác sĩ"
+}
+
+###
+
+### ========================================
+### 11. ADMIN tạo dịch vụ mới → expect 200
+### ========================================
+POST {{baseUrl}}/services
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "Cấy ghép Implant",
+  "description": "Cấy ghép implant nha khoa",
+  "durationMinutes": 90,
+  "price": 5000000
+}
+
+###
+
+### ========================================
+### 12. PATIENT tạo dịch vụ mới → expect 403
+### ========================================
+POST {{baseUrl}}/services
+Authorization: Bearer {{patientToken}}
+Content-Type: application/json
+
+{
+  "name": "Cấy ghép Implant",
+  "description": "Cấy ghép implant nha khoa",
+  "durationMinutes": 90,
+  "price": 5000000
+}
+
+###

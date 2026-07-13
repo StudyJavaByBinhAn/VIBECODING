@@ -30,7 +30,7 @@ public class AppointmentController {
     private final SlotService slotService;
 
     @GetMapping("/appointments")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('RECEPTIONIST')")
     public ResponseEntity<ApiResponse<PageResponse<AppointmentResponse>>> getAll(
             @PageableDefault(size = 20, sort = "appointmentDate", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(ApiResponse.ok(appointmentService.findAll(pageable)));
@@ -51,6 +51,21 @@ public class AppointmentController {
     @PatchMapping("/appointments/{id}/cancel")
     public ResponseEntity<ApiResponse<AppointmentResponse>> cancel(@PathVariable Long id, Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.ok("Huỷ lịch thành công", appointmentService.cancel(id, authentication)));
+    }
+
+    @PatchMapping("/appointments/{id}/confirm")
+    public ResponseEntity<ApiResponse<AppointmentResponse>> confirm(@PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.ok("Xác nhận lịch thành công", appointmentService.confirm(id, authentication)));
+    }
+
+    @PatchMapping("/appointments/{id}/complete")
+    public ResponseEntity<ApiResponse<AppointmentResponse>> complete(@PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.ok("Hoàn thành lịch thành công", appointmentService.complete(id, authentication)));
+    }
+
+    @PatchMapping("/appointments/{id}/no-show")
+    public ResponseEntity<ApiResponse<AppointmentResponse>> markNoShow(@PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.ok("Đánh dấu no-show thành công", appointmentService.markNoShow(id, authentication)));
     }
 
     @GetMapping("/slots")

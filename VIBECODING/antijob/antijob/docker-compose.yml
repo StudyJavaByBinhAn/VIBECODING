@@ -29,6 +29,43 @@ services:
       timeout: 5s
       retries: 10
 
+  # Chạy full app trong container (thay vì ./gradlew bootRun trên host) — không nằm trong
+  # `docker compose up -d` mặc định (tránh xung đột port 8080 với dev chạy bootRun song song).
+  # Bật bằng: docker compose --profile full up -d
+  antijob-app:
+    build: .
+    container_name: antijob-app
+    profiles: ["full"]
+    depends_on:
+      dental-db:
+        condition: service_healthy
+      dental-redis:
+        condition: service_healthy
+    # Chỉ override DB_HOST/REDIS_HOST (bắt buộc — "localhost" không resolve được sang container
+    # khác trong network) + giữ khớp credential với service postgres/redis phía trên. Cố tình
+    # KHÔNG truyền JWT_SECRET/ADMIN_EMAIL/ADMIN_PASSWORD/CORS_ALLOWED_ORIGINS/SPRING_PROFILES_ACTIVE
+    # qua đây: nếu host không set các biến này, `${VAR:-}` vẫn set env var thành CHUỖI RỖNG trong
+    # container (khác với "chưa set") — Spring coi rỗng là "đã có giá trị" nên KHÔNG fallback về
+    # default trong application.yaml nữa, phá vỡ default dev secret (lỗi thật gặp phải khi verify:
+    # JwtUtil bean crash vì key rỗng). Muốn override cho môi trường prod-like, dùng `env_file: .env`
+    # (không khai báo sẵn ở đây) hoặc `deploy.sh` (đã hỗ trợ đầy đủ, xem README).
+    environment:
+      DB_HOST: dental-db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-dental_db}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      REDIS_HOST: dental-redis
+      REDIS_PORT: 6379
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
 volumes:
   dental-db-data:
   dental-redis-data:

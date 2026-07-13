@@ -1,5 +1,6 @@
 package com.vibecode.antijob.controller;
 
+import com.vibecode.antijob.dto.CreateDentalServiceRequest;
 import com.vibecode.antijob.dto.DentalServiceResponse;
 import com.vibecode.antijob.dto.UpdateActiveRequest;
 import com.vibecode.antijob.exception.ApiResponse;
@@ -28,5 +29,11 @@ public class DentalServiceController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<DentalServiceResponse>> updateActive(@PathVariable Long id, @Valid @RequestBody UpdateActiveRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Cập nhật trạng thái thành công", dentalServiceCatalogService.updateActive(id, req.isActive())));
+    }
+
+    @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<DentalServiceResponse>> create(@Valid @RequestBody CreateDentalServiceRequest req) {
+        return ResponseEntity.ok(ApiResponse.ok("Tạo dịch vụ thành công", dentalServiceCatalogService.create(req)));
     }
 }

@@ -55,7 +55,7 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build + test (bao gồm Flyway migration thật trên Postgres service container)
+      - name: Build + test (bao gồm Flyway migration thật trên Postgres service container, @DataJpaTest qua Testcontainers, Jacoco coverage gate)
         env:
           DB_HOST: localhost
           DB_PORT: 5432
@@ -65,3 +65,11 @@ jobs:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
         run: ./gradlew build --console=plain
+
+      - name: Publish Jacoco coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-coverage-report
+          path: VIBECODING/antijob/antijob/build/reports/jacoco/test/html
+          retention-days: 14

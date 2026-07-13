@@ -1,6 +1,7 @@
 package com.vibecode.antijob.service;
 
 import com.vibecode.antijob.dto.AuthResponse;
+import com.vibecode.antijob.dto.ChangePasswordRequest;
 import com.vibecode.antijob.dto.LoginRequest;
 import com.vibecode.antijob.dto.RegisterRequest;
 import com.vibecode.antijob.dto.RegisterStaffRequest;
@@ -13,19 +14,28 @@ import com.vibecode.antijob.repository.PatientRepository;
 import com.vibecode.antijob.repository.UserRepository;
 import com.vibecode.antijob.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.UUID;
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+
+    private static final int RESET_TOKEN_VALID_MINUTES = 30;
 
     private final UserRepository userRepository;
     private final PatientRepository patientRepository;
     private final DentistRepository dentistRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final Clock clock;
 
     @Transactional
     public AuthResponse register(RegisterRequest req) {
@@ -95,6 +105,44 @@ public class AuthService {
         }
 
         return buildAuthResponse(user);
+    }
+
+    @Transactional
+    public void changePassword(String email, ChangePasswordRequest req) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy tài khoản"));
+
+        if (!passwordEncoder.matches(req.getCurrentPassword(), user.getPassword())) {
+            throw new IllegalArgumentException("Mật khẩu hiện tại không đúng");
+        }
+
+        user.setPassword(passwordEncoder.encode(req.getNewPassword()));
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void forgotPassword(String email) {
+        // Không throw dù email không tồn tại — tránh lộ thông tin tài khoản nào đã đăng ký (account enumeration)
+        userRepository.findByEmail(email).ifPresent(user -> {
+            String token = UUID.randomUUID().toString();
+            user.setResetToken(token);
+            user.setResetTokenExpiry(LocalDateTime.now(clock).plusMinutes(RESET_TOKEN_VALID_MINUTES));
+            userRepository.save(user);
+            log.info("Password reset token cho {}: {} (hết hạn sau {} phút) — TODO gửi qua email khi có SMTP provider",
+                    email, token, RESET_TOKEN_VALID_MINUTES);
+        });
+    }
+
+    @Transactional
+    public void resetPassword(String token, String newPassword) {
+        User user = userRepository.findByResetToken(token)
+                .filter(u -> u.getResetTokenExpiry() != null && u.getResetTokenExpiry().isAfter(LocalDateTime.now(clock)))
+                .orElseThrow(() -> new IllegalArgumentException("Token không hợp lệ hoặc đã hết hạn"));
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setResetToken(null);
+        user.setResetTokenExpiry(null);
+        userRepository.save(user);
     }
 
     private AuthResponse buildAuthResponse(User user) {

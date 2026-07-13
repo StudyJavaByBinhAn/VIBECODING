@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface DentistRepository extends JpaRepository<Dentist, Long> {
     List<Dentist> findByActiveTrue();
+
+    boolean existsByLicenseNumberAndIdNot(String licenseNumber, Long id);
 }

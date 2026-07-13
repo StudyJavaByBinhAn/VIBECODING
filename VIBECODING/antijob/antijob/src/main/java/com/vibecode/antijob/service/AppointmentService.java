@@ -62,9 +62,8 @@ public class AppointmentService {
 
     @Transactional(readOnly = true)
     public AppointmentResponse findById(Long id, Authentication authentication) {
-        Appointment appt = appointmentRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lịch hẹn id=" + id));
-        assertCanAccess(appt, authentication, true);
+        Appointment appt = getAppointmentOrThrow(id);
+        assertCanAccess(appt, authentication, true, true);
         return appointmentMapper.toResponse(appt);
     }
 
@@ -120,9 +119,8 @@ public class AppointmentService {
     @Transactional
     @CacheEvict(cacheNames = "slots", allEntries = true)
     public AppointmentResponse cancel(Long id, Authentication authentication) {
-        Appointment appt = appointmentRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lịch hẹn id=" + id));
-        assertCanAccess(appt, authentication, false);
+        Appointment appt = getAppointmentOrThrow(id);
+        assertCanAccess(appt, authentication, false, false);
 
         if (appt.getStatus() != AppointmentStatus.PENDING && appt.getStatus() != AppointmentStatus.CONFIRMED) {
             throw new IllegalArgumentException("Chỉ có thể huỷ lịch ở trạng thái PENDING hoặc CONFIRMED");
@@ -137,6 +135,50 @@ public class AppointmentService {
 
         appt.setStatus(AppointmentStatus.CANCELLED);
         return appointmentMapper.toResponse(appointmentRepository.save(appt));
+    }
+
+    @Transactional
+    public AppointmentResponse confirm(Long id, Authentication authentication) {
+        Appointment appt = getAppointmentOrThrow(id);
+        assertCanManage(appt, authentication);
+
+        if (appt.getStatus() != AppointmentStatus.PENDING) {
+            throw new IllegalArgumentException("Chỉ có thể xác nhận lịch ở trạng thái PENDING");
+        }
+
+        appt.setStatus(AppointmentStatus.CONFIRMED);
+        return appointmentMapper.toResponse(appointmentRepository.save(appt));
+    }
+
+    @Transactional
+    public AppointmentResponse complete(Long id, Authentication authentication) {
+        Appointment appt = getAppointmentOrThrow(id);
+        assertCanManage(appt, authentication);
+
+        if (appt.getStatus() != AppointmentStatus.CONFIRMED) {
+            throw new IllegalArgumentException("Chỉ có thể hoàn thành lịch ở trạng thái CONFIRMED");
+        }
+
+        appt.setStatus(AppointmentStatus.COMPLETED);
+        return appointmentMapper.toResponse(appointmentRepository.save(appt));
+    }
+
+    @Transactional
+    public AppointmentResponse markNoShow(Long id, Authentication authentication) {
+        Appointment appt = getAppointmentOrThrow(id);
+        assertCanManage(appt, authentication);
+
+        if (appt.getStatus() != AppointmentStatus.PENDING && appt.getStatus() != AppointmentStatus.CONFIRMED) {
+            throw new IllegalArgumentException("Chỉ có thể đánh dấu no-show cho lịch ở trạng thái PENDING hoặc CONFIRMED");
+        }
+
+        appt.setStatus(AppointmentStatus.NO_SHOW);
+        return appointmentMapper.toResponse(appointmentRepository.save(appt));
+    }
+
+    private Appointment getAppointmentOrThrow(Long id) {
+        return appointmentRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy lịch hẹn id=" + id));
     }
 
     private ClinicSettings getSettingsOrThrow() {
@@ -182,14 +224,18 @@ public class AppointmentService {
     }
 
     /**
-     * ADMIN luôn được phép. PATIENT chỉ được phép trên lịch hẹn của chính mình.
+     * ADMIN luôn được phép. RECEPTIONIST được phép nếu allowReceptionist=true (xem, không huỷ).
+     * PATIENT chỉ được phép trên lịch hẹn của chính mình.
      * DENTIST chỉ được phép xem (allowDentist=true) lịch hẹn được giao cho mình, không được huỷ.
      */
-    private void assertCanAccess(Appointment appt, Authentication authentication, boolean allowDentist) {
-        boolean isAdmin = authentication.getAuthorities().stream()
+    private void assertCanAccess(Appointment appt, Authentication authentication, boolean allowDentist, boolean allowReceptionist) {
+        List<String> authorities = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
-                .anyMatch(a -> a.equals("ROLE_ADMIN"));
-        if (isAdmin) {
+                .toList();
+        if (authorities.contains("ROLE_ADMIN")) {
+            return;
+        }
+        if (allowReceptionist && authorities.contains("ROLE_RECEPTIONIST")) {
             return;
         }
 
@@ -199,6 +245,25 @@ public class AppointmentService {
 
         if (!isOwnerPatient && !isAssignedDentist) {
             throw new AccessDeniedException("Không có quyền truy cập lịch hẹn id=" + appt.getId());
+        }
+    }
+
+    /**
+     * ADMIN và RECEPTIONIST quản lý được mọi lịch hẹn (confirm/complete/no-show).
+     * DENTIST chỉ quản lý được lịch hẹn được giao cho mình. PATIENT không có quyền.
+     */
+    private void assertCanManage(Appointment appt, Authentication authentication) {
+        List<String> authorities = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .toList();
+        if (authorities.contains("ROLE_ADMIN") || authorities.contains("ROLE_RECEPTIONIST")) {
+            return;
+        }
+
+        String email = authentication.getName();
+        boolean isAssignedDentist = appt.getDentist().getUser().getEmail().equals(email);
+        if (!isAssignedDentist) {
+            throw new AccessDeniedException("Không có quyền cập nhật lịch hẹn id=" + appt.getId());
         }
     }
 }
