@@ -49,6 +49,12 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.ok("Đổi mật khẩu thành công", null));
     }
 
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(Authentication authentication) {
+        authService.logout(authentication.getName());
+        return ResponseEntity.ok(ApiResponse.ok("Đăng xuất thành công", null));
+    }
+
     @PostMapping("/forgot-password")
     public ResponseEntity<ApiResponse<Void>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest req) {
         authService.forgotPassword(req.getEmail());

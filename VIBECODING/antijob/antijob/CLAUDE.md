@@ -301,6 +301,22 @@ Theo roadmap gốc (`C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-hint
 
 **Roadmap gốc (Phase 9-14) coi như đã hoàn thành toàn bộ.** Không còn phase nào tồn đọng — các việc phát sinh sau này (nếu có) sẽ được thêm thành Phase mới khi user yêu cầu, không dựa vào roadmap cũ nữa.
 
+**Phase 15 — JWT logout/revoke (Hoàn thành 2026-07-14):**
+
+Sau đánh giá "sẵn sàng sử dụng" (xem mục dưới), user chọn khắc phục giới hạn "JWT sống hết 24h dù đổi mật khẩu/logout" làm việc tiếp theo.
+
+- [x] **1. `TokenRevocationService`** (`security/TokenRevocationService.java`, mới) — JWT là stateless nên không "xoá" được token đã phát; thay vào đó lưu 1 mốc `notBefore` (epoch millis) theo email trong Redis (`token:notBefore:<email>`, TTL = đúng bằng `jwt.expiration-ms` vì sau đó token cũ tự hết hạn nên không cần giữ key nữa). `revokeAllTokens(email)` ghi mốc = thời điểm hiện tại; `isRevoked(email, issuedAt)` so `issuedAt` của token với mốc đã lưu — token phát trước mốc bị coi là đã thu hồi. Đây là revoke **toàn bộ token của user** (mọi thiết bị), không phải revoke 1 token đơn lẻ theo `jti` — đơn giản hơn và đúng nhu cầu thực tế (logout nên đăng xuất khỏi mọi phiên, đổi mật khẩu nên vô hiệu hoá token cũ ở mọi nơi).
+- [x] **2. `JwtUtil.extractIssuedAt(token)`** (method mới) — lấy `issuedAt` claim có sẵn từ lúc `generateToken` (không cần thêm claim mới).
+- [x] **3. `JwtAuthFilter`** — sau khi `isValid(token)` đúng, gọi thêm `tokenRevocationService.isRevoked(email, issuedAt)`; nếu bị thu hồi thì bỏ qua không set `SecurityContext` (giống hệt xử lý token invalid — request tiếp tục chain nhưng không có auth, dẫn tới 403 ở tầng Security do endpoint yêu cầu authenticated).
+- [x] **4. `POST /api/auth/logout`** (`AuthController`, yêu cầu đã đăng nhập — không giới hạn role) — gọi `AuthService.logout(email)` → `tokenRevocationService.revokeAllTokens(email)`.
+- [x] **5. Nối vào 2 luồng đổi mật khẩu có sẵn** — `AuthService.changePassword()` và `AuthService.resetPassword()` đều gọi `tokenRevocationService.revokeAllTokens(email)` sau khi lưu mật khẩu mới, để token phát hành trước đó (có thể đã bị lộ, đúng lý do đổi mật khẩu) không dùng được nữa ngay lập tức thay vì phải chờ hết hạn 24h.
+- [x] **6. Test mới**: `TokenRevocationServiceTest` (4 test: ghi đúng key/TTL, chưa từng revoke → false, issuedAt trước/sau mốc revoke). `JwtUtilTest` thêm test `extractIssuedAt`. `JwtAuthFilterTest` thêm test token bị revoke không set SecurityContext + cập nhật constructor/stub cho các test hiện có. `AuthServiceTest`/`AuthControllerTest` cập nhật mock `TokenRevocationService` + verify `revokeAllTokens` được gọi đúng ở `changePassword`/`resetPassword`/`logout`.
+- [x] **7. Test `.http` mới**: `features/auth-logout-token-revocation.http` — full flow: login → gọi API OK → logout → dùng lại token cũ bị 403 → login lại token mới OK → đổi mật khẩu bằng token đó → dùng lại token trước khi đổi bị 403 → login mật khẩu mới OK.
+- [x] **8. Verify toàn bộ**: `./gradlew build` pass (SpotBugs 0 finding thật, Jacoco gate qua). `docker compose up -d` (Postgres+Redis+MailHog) + `bootRun` thật + curl xác nhận đúng: token dùng được trước logout (200) → logout (200) → token cũ bị revoke ngay (403) → login mới hoạt động bình thường (200) → đổi mật khẩu bằng token mới → token đó bị revoke ngay sau đổi mật khẩu (403) → login bằng mật khẩu mới thành công (200). Regression: `GET /api/appointments` không token vẫn 403, `/actuator/health` vẫn 200, Swagger `/v3/api-docs` vẫn 200.
+- [x] **9. Docs**: `.http` mới (mục 7), `CLAUDE.md` (mục này + xoá dòng "Không có logout/revoke token" khỏi "Giới hạn đã biết" bên dưới), `CHANGELOG.md` (Phase 15 entry).
+
+**Giới hạn còn lại sau Phase 15** — `revokeAllTokens` là "logout mọi thiết bị" (không phải revoke từng token/session riêng lẻ theo thiết bị) — chấp nhận được cho quy mô hiện tại, nhưng nếu sau này cần "đăng xuất thiết bị A mà vẫn giữ thiết bị B" thì cần model theo `jti` + danh sách token đang hoạt động (refresh-token pattern), phức tạp hơn nhiều so với nhu cầu thực tế hiện có.
+
 ---
 
 ## Đánh giá "sẵn sàng sử dụng" (2026-07-14)
@@ -321,7 +337,7 @@ Sau khi roadmap Phase 9-14 hoàn thành, user yêu cầu tiếp tục tới khi 
 **Kết luận: dự án đã sẵn sàng cho mục đích dev/demo/portfolio.** Toàn bộ luồng nghiệp vụ chính (đặt lịch, vòng đời appointment, phân quyền 4 role, profile self-service, admin CRUD config, quên/đổi mật khẩu qua email thật, rate limiting, observability) đã được verify thật, không chỉ test tự động. `./gradlew build` xanh (131 test + Jacoco 50%+ + SpotBugs 0 finding thật).
 
 **Giới hạn đã biết, cố tình chưa làm (không chặn "dùng được", chỉ cần biết trước khi lên production thật):**
-- Không có logout/revoke token — JWT sống hết 24h dù đổi mật khẩu/logout. Chấp nhận được cho dev/demo, cần cân nhắc refresh-token hoặc token blacklist nếu lên production thật.
+- ~~Không có logout/revoke token~~ — đã khắc phục ở Phase 15 (`TokenRevocationService`, xem mục Phase 15 ở trên). Giới hạn còn lại: revoke là theo user (mọi thiết bị), không phải theo từng phiên/thiết bị riêng lẻ.
 - Không có Micrometer/Prometheus (bỏ ở Phase 13 vì chưa có hạ tầng scrape).
 - MailHog chỉ dùng được cho dev (không gửi mail thật ra ngoài) — cần đổi `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD` sang SMTP provider thật trước khi có người dùng thật.
 - `admin123` là mật khẩu seed mặc định ở dev — **bắt buộc đổi qua `ADMIN_PASSWORD` trước khi chạy `SPRING_PROFILES_ACTIVE=prod`** (đã có fail-fast tương tự cho JWT_SECRET, nhưng ADMIN_PASSWORD không bắt buộc — nếu để trống ở prod thì đơn giản là không tạo admin nào, không phải lỗ hổng, nhưng cần nhớ set để có tài khoản đầu tiên).

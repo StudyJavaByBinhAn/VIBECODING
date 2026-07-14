@@ -45,6 +45,10 @@ public class JwtUtil {
         return parseClaims(token).get("role", String.class);
     }
 
+    public Date extractIssuedAt(String token) {
+        return parseClaims(token).getIssuedAt();
+    }
+
     public boolean isValid(String token) {
         try {
             parseClaims(token);

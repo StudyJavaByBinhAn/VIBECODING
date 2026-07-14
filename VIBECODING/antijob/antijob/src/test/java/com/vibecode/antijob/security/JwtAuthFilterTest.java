@@ -13,6 +13,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.util.Date;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -26,6 +28,8 @@ class JwtAuthFilterTest {
     @Mock
     private UserDetailsServiceImpl userDetailsService;
     @Mock
+    private TokenRevocationService tokenRevocationService;
+    @Mock
     private HttpServletRequest request;
     @Mock
     private HttpServletResponse response;
@@ -36,7 +40,7 @@ class JwtAuthFilterTest {
 
     @BeforeEach
     void setUp() {
-        filter = new JwtAuthFilter(jwtUtil, userDetailsService);
+        filter = new JwtAuthFilter(jwtUtil, userDetailsService, tokenRevocationService);
     }
 
     @AfterEach
@@ -49,6 +53,9 @@ class JwtAuthFilterTest {
         when(request.getHeader("Authorization")).thenReturn("Bearer valid-token");
         when(jwtUtil.isValid("valid-token")).thenReturn(true);
         when(jwtUtil.extractEmail("valid-token")).thenReturn("patient@dental.vn");
+        Date issuedAt = new Date();
+        when(jwtUtil.extractIssuedAt("valid-token")).thenReturn(issuedAt);
+        when(tokenRevocationService.isRevoked("patient@dental.vn", issuedAt)).thenReturn(false);
         UserDetails userDetails = User.withUsername("patient@dental.vn")
                 .password("irrelevant")
                 .authorities("ROLE_PATIENT")
@@ -59,6 +66,22 @@ class JwtAuthFilterTest {
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("patient@dental.vn");
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
+    void revokedToken_doesNotSetAuthentication_butStillContinuesChain() throws Exception {
+        when(request.getHeader("Authorization")).thenReturn("Bearer revoked-token");
+        when(jwtUtil.isValid("revoked-token")).thenReturn(true);
+        when(jwtUtil.extractEmail("revoked-token")).thenReturn("patient@dental.vn");
+        Date issuedAt = new Date();
+        when(jwtUtil.extractIssuedAt("revoked-token")).thenReturn(issuedAt);
+        when(tokenRevocationService.isRevoked("patient@dental.vn", issuedAt)).thenReturn(true);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        verifyNoInteractions(userDetailsService);
         verify(filterChain).doFilter(request, response);
     }
 
@@ -101,6 +124,7 @@ class JwtAuthFilterTest {
         when(request.getHeader("Authorization")).thenReturn("Bearer valid-token");
         when(jwtUtil.isValid("valid-token")).thenReturn(true);
         when(jwtUtil.extractEmail("valid-token")).thenReturn("patient@dental.vn");
+        when(jwtUtil.extractIssuedAt("valid-token")).thenReturn(new Date());
         org.springframework.security.authentication.UsernamePasswordAuthenticationToken existing =
                 new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("already-authenticated", null);
         SecurityContextHolder.getContext().setAuthentication(existing);

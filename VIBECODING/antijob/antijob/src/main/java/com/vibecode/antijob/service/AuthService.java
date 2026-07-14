@@ -13,6 +13,7 @@ import com.vibecode.antijob.repository.DentistRepository;
 import com.vibecode.antijob.repository.PatientRepository;
 import com.vibecode.antijob.repository.UserRepository;
 import com.vibecode.antijob.security.JwtUtil;
+import com.vibecode.antijob.security.TokenRevocationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -36,6 +37,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final EmailService emailService;
+    private final TokenRevocationService tokenRevocationService;
     private final Clock clock;
 
     @Transactional
@@ -119,6 +121,11 @@ public class AuthService {
 
         user.setPassword(passwordEncoder.encode(req.getNewPassword()));
         userRepository.save(user);
+        tokenRevocationService.revokeAllTokens(email);
+    }
+
+    public void logout(String email) {
+        tokenRevocationService.revokeAllTokens(email);
     }
 
     @Transactional
@@ -147,6 +154,7 @@ public class AuthService {
         user.setResetToken(null);
         user.setResetTokenExpiry(null);
         userRepository.save(user);
+        tokenRevocationService.revokeAllTokens(user.getEmail());
     }
 
     private AuthResponse buildAuthResponse(User user) {

@@ -51,4 +51,15 @@ class JwtUtilTest {
 
         assertThat(jwtUtil.isValid(tokenFromOtherSecret)).isFalse();
     }
+
+    @Test
+    void extractIssuedAt_returnsTimeCloseToGeneration() {
+        long before = System.currentTimeMillis();
+        String token = jwtUtil.generateToken("patient@dental.vn", "PATIENT");
+        long after = System.currentTimeMillis();
+
+        long issuedAtMs = jwtUtil.extractIssuedAt(token).getTime();
+
+        assertThat(issuedAtMs).isBetween(before - 1000, after + 1000);
+    }
 }

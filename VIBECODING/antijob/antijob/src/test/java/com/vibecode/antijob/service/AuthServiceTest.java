@@ -7,6 +7,7 @@ import com.vibecode.antijob.repository.DentistRepository;
 import com.vibecode.antijob.repository.PatientRepository;
 import com.vibecode.antijob.repository.UserRepository;
 import com.vibecode.antijob.security.JwtUtil;
+import com.vibecode.antijob.security.TokenRevocationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -49,6 +50,8 @@ class AuthServiceTest {
     private JwtUtil jwtUtil;
     @Mock
     private EmailService emailService;
+    @Mock
+    private TokenRevocationService tokenRevocationService;
 
     private AuthService authService;
 
@@ -57,7 +60,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(userRepository, patientRepository, dentistRepository, passwordEncoder, jwtUtil,
-                emailService, FIXED_CLOCK);
+                emailService, tokenRevocationService, FIXED_CLOCK);
         user = User.builder().id(1L).email(EMAIL).password("hashed-old").role(Role.PATIENT).build();
     }
 
@@ -78,6 +81,7 @@ class AuthServiceTest {
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getPassword()).isEqualTo("hashed-new");
+        verify(tokenRevocationService).revokeAllTokens(EMAIL);
     }
 
     @Test
@@ -92,6 +96,16 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.changePassword(EMAIL, req))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(userRepository, never()).save(any());
+        verify(tokenRevocationService, never()).revokeAllTokens(anyString());
+    }
+
+    // ---------- logout() ----------
+
+    @Test
+    void logout_revokesAllTokensForEmail() {
+        authService.logout(EMAIL);
+
+        verify(tokenRevocationService).revokeAllTokens(EMAIL);
     }
 
     // ---------- forgotPassword() ----------
@@ -136,6 +150,7 @@ class AuthServiceTest {
         assertThat(captor.getValue().getPassword()).isEqualTo("hashed-new");
         assertThat(captor.getValue().getResetToken()).isNull();
         assertThat(captor.getValue().getResetTokenExpiry()).isNull();
+        verify(tokenRevocationService).revokeAllTokens(EMAIL);
     }
 
     @Test

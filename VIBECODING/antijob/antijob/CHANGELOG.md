@@ -4,6 +4,19 @@
 
 ## [Unreleased]
 
+## Phase 15 — 2026-07-14 (JWT logout/revoke)
+
+### Added
+- `TokenRevocationService` (`security/`) — lưu mốc "notBefore" theo email trong Redis; token có `issuedAt` trước mốc này bị coi là đã thu hồi. Dùng cho cả logout lẫn đổi/đặt lại mật khẩu (khắc phục giới hạn đã ghi trong đánh giá "sẵn sàng sử dụng" bên dưới: "JWT sống hết 24h dù đổi mật khẩu/logout").
+- `POST /api/auth/logout` (yêu cầu đã đăng nhập) — thu hồi mọi token hiện có của user.
+- `JwtUtil.extractIssuedAt(token)`.
+- `TokenRevocationServiceTest` (4 test) + test mới trong `JwtUtilTest`/`JwtAuthFilterTest`.
+- Test `.http` mới: `features/auth-logout-token-revocation.http`.
+
+### Changed
+- `AuthService.changePassword`/`resetPassword` giờ thu hồi mọi token cũ ngay sau khi đổi mật khẩu thành công (trước đây token cũ vẫn dùng được tới khi hết hạn 24h dù mật khẩu đã đổi).
+- `JwtAuthFilter` chặn token đã bị thu hồi trước khi set `SecurityContext`.
+
 ## 2026-07-14 — Đánh giá "sẵn sàng sử dụng"
 
 ### Verified

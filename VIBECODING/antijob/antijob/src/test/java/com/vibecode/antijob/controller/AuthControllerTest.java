@@ -162,4 +162,16 @@ class AuthControllerTest {
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void logout_authenticated_returns200() throws Exception {
+        var principal = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                "patient@dental.vn", null);
+
+        mockMvc.perform(post("/api/auth/logout").with(csrf())
+                        .principal(principal))
+                .andExpect(status().isOk());
+
+        verify(authService).logout("patient@dental.vn");
+    }
 }

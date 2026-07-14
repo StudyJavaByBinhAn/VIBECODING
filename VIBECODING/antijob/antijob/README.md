@@ -109,9 +109,10 @@ OpenAPI JSON raw: `http://localhost:8080/v3/api-docs`. Hầu hết endpoint yêu
 | POST | `/api/auth/register` | Public | Đăng ký tài khoản PATIENT |
 | POST | `/api/auth/login` | Public | Đăng nhập, trả JWT |
 | POST | `/api/auth/register-staff` | ADMIN | Tạo tài khoản DENTIST/ADMIN/RECEPTIONIST |
-| PATCH | `/api/auth/me/password` | Đã đăng nhập | Đổi mật khẩu (yêu cầu `currentPassword` đúng) |
-| POST | `/api/auth/forgot-password` | Public | Tạo reset token (30 phút) — chưa gửi email thật, xem log server để lấy token khi test |
-| POST | `/api/auth/reset-password` | Public | Đặt lại mật khẩu bằng token từ forgot-password |
+| PATCH | `/api/auth/me/password` | Đã đăng nhập | Đổi mật khẩu (yêu cầu `currentPassword` đúng) — thu hồi mọi token cũ ngay sau khi đổi |
+| POST | `/api/auth/logout` | Đã đăng nhập | Thu hồi mọi token hiện có của tài khoản (mọi thiết bị) |
+| POST | `/api/auth/forgot-password` | Public | Tạo reset token (30 phút), gửi qua email (MailHog ở dev — xem `localhost:8025`) |
+| POST | `/api/auth/reset-password` | Public | Đặt lại mật khẩu bằng token từ forgot-password — thu hồi mọi token cũ ngay sau khi đặt lại |
 | GET | `/api/appointments` | ADMIN / RECEPTIONIST | Danh sách lịch hẹn (phân trang) |
 | GET | `/api/appointments/{id}` | Chủ sở hữu / ADMIN / dentist được giao | Xem 1 lịch hẹn |
 | POST | `/api/appointments` | PATIENT | Đặt lịch (không gửi `dentistId` → hệ thống tự chọn bác sĩ) |

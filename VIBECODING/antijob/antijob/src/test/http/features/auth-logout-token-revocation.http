@@ -1,0 +1,115 @@
+### Feature: Logout / JWT revocation (Phase 15)
+### Mục tiêu: JWT là stateless nên không thể "xoá" token đã phát hành — logout và đổi/đặt lại
+### mật khẩu đều ghi 1 mốc "notBefore" theo email vào Redis; JwtAuthFilter chặn mọi token có
+### issuedAt trước mốc đó. Test xác nhận: token bị thu hồi ngay sau logout/đổi mật khẩu, và
+### login mới sau đó vẫn hoạt động bình thường (không khoá tài khoản vĩnh viễn).
+### Chạy tuần tự từ trên xuống.
+
+@baseUrl = http://localhost:8080/api
+
+### ========================================
+### 0. Đăng ký + đăng nhập
+### ========================================
+# @name registerPatient
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "logout-test@example.com",
+  "password": "secret123",
+  "fullName": "Logout Test",
+  "phone": "0900000060"
+}
+
+###
+
+# @name loginPatient
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "logout-test@example.com",
+  "password": "secret123"
+}
+
+###
+
+@patientToken = {{loginPatient.response.body.$.data.token}}
+
+### ========================================
+### 1. Token còn hạn dùng bình thường → expect 200
+### ========================================
+GET {{baseUrl}}/patients/me
+Authorization: Bearer {{patientToken}}
+
+###
+
+### ========================================
+### 2. Logout → expect 200
+### ========================================
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{patientToken}}
+
+###
+
+### ========================================
+### 3. Dùng lại token cũ sau logout → expect 403 (đã bị thu hồi, không có SecurityContext)
+### ========================================
+GET {{baseUrl}}/patients/me
+Authorization: Bearer {{patientToken}}
+
+###
+
+### ========================================
+### 4. Login lại (token mới) → expect 200, vẫn dùng được bình thường
+### ========================================
+# @name reloginAfterLogout
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "logout-test@example.com",
+  "password": "secret123"
+}
+
+###
+
+@freshToken = {{reloginAfterLogout.response.body.$.data.token}}
+
+GET {{baseUrl}}/patients/me
+Authorization: Bearer {{freshToken}}
+
+###
+
+### ========================================
+### 5. Đổi mật khẩu bằng token hiện tại → expect 200 (cũng thu hồi mọi token cũ)
+### ========================================
+PATCH {{baseUrl}}/auth/me/password
+Authorization: Bearer {{freshToken}}
+Content-Type: application/json
+
+{
+  "currentPassword": "secret123",
+  "newPassword": "newsecret456"
+}
+
+###
+
+### ========================================
+### 6. Dùng lại token trước khi đổi mật khẩu → expect 403 (bị thu hồi bởi đổi mật khẩu)
+### ========================================
+GET {{baseUrl}}/patients/me
+Authorization: Bearer {{freshToken}}
+
+###
+
+### ========================================
+### 7. Login bằng mật khẩu mới → expect 200
+### ========================================
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "logout-test@example.com",
+  "password": "newsecret456"
+}
