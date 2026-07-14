@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!-- Lombok @Data/@Builder entity và DTO lưu/trả tham chiếu trực tiếp tới field mutable
+         (LocalDate, entity liên kết, danh sách...) ở khắp project — đây là convention có chủ đích
+         (xem rules/02-coding-conventions.md), không phải lỗ hổng thật trong 1 app monolith. -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Constructor cố tình throw khi config sai (JwtUtil key rỗng/yếu, StartupSecurityValidator
+         JWT_SECRET mặc định ở prod) — đúng thiết kế fail-fast từ Phase 9, không phải bug. -->
+    <Match>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+</FindBugsFilter>

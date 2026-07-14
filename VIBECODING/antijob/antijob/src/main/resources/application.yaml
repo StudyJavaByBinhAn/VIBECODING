@@ -31,6 +31,23 @@ spring:
   cache:
     type: redis
 
+  # MailHog (dev): SMTP không cần auth tại localhost:1025, UI xem mail tại localhost:8025.
+  # Prod: đổi MAIL_HOST/MAIL_PORT trỏ SMTP relay thật, set MAIL_USERNAME/MAIL_PASSWORD nếu cần auth.
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:false}
+
+mail:
+  from: ${MAIL_FROM:no-reply@vibecode-dental.local}
+
 jwt:
   # base64, mặc định chỉ dùng cho dev — BẮT BUỘC set JWT_SECRET riêng khi deploy thật (xem .env.example)
   secret: ${JWT_SECRET:dGhpcy1pcy1hLWRldi1vbmx5LXNlY3JldC1rZXktY2hhbmdlLWluLXByb2Q=}

@@ -70,6 +70,8 @@ class AppointmentServiceTest {
     private ClinicSettingsRepository clinicSettingsRepository;
     @Mock
     private AppointmentMapper appointmentMapper;
+    @Mock
+    private EmailService emailService;
 
     private AppointmentService appointmentService;
 
@@ -81,7 +83,8 @@ class AppointmentServiceTest {
     @BeforeEach
     void setUp() {
         appointmentService = new AppointmentService(appointmentRepository, patientRepository, dentistRepository,
-                dentalServiceRepository, workScheduleRepository, clinicSettingsRepository, appointmentMapper, FIXED_CLOCK);
+                dentalServiceRepository, workScheduleRepository, clinicSettingsRepository, appointmentMapper,
+                emailService, FIXED_CLOCK);
 
         patient = Patient.builder().id(1L).user(User.builder().email(PATIENT_EMAIL).build()).fullName("Nguyen Van A").build();
         activeDentist = Dentist.builder().id(10L).active(true)
@@ -159,6 +162,7 @@ class AppointmentServiceTest {
         verify(appointmentRepository).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(AppointmentStatus.PENDING);
         assertThat(captor.getValue().getDentist()).isEqualTo(activeDentist);
+        verify(emailService).send(eq(PATIENT_EMAIL), any(), any());
     }
 
     @Test
@@ -346,6 +350,7 @@ class AppointmentServiceTest {
         ArgumentCaptor<Appointment> captor = ArgumentCaptor.forClass(Appointment.class);
         verify(appointmentRepository).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(AppointmentStatus.CANCELLED);
+        verify(emailService).send(eq(PATIENT_EMAIL), any(), any());
     }
 
     @Test

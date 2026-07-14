@@ -282,3 +282,46 @@ Theo roadmap gốc (`C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-hint
 - [x] **5. `logback-spring.xml` mới** — pattern console thêm `[%X{requestId:--}]` để phân biệt log của các request đồng thời. Verify thật qua `bootRun`: log có định dạng `... [-] ...` khi ngoài request (MDC rỗng, default `--`), curl thật với header `X-Request-ID: my-custom-trace-123` → response echo đúng lại header, không set header → tự sinh UUID khác nhau mỗi request.
 - [x] **6. `CorrelationIdFilterTest`** (4 test Mockito thuần) — verify MDC được set trong lúc `filterChain.doFilter` chạy và bị xoá sau đó (kể cả khi chain ném exception), header luôn được set, tái dùng đúng request-id có sẵn từ client, `getOrder()` đúng `HIGHEST_PRECEDENCE`.
 - [x] **7. Verify toàn bộ** — `./gradlew build` pass (129 test tổng, gồm 4 `CorrelationIdFilterTest` mới). `bootRun` thật + curl xác nhận `/actuator/health` 200 không cần token, header `X-Request-ID` hoạt động đúng cả 2 nhánh. `docker compose --profile full up -d --build` xác nhận healthcheck thật chuyển `starting`→`healthy`. Regression: `docker compose up -d` mặc định (không profile) vẫn chỉ chạy đúng 2 container `dental-db`/`dental-redis` như trước, không có gì đổi. Docs cập nhật: README (Tech Stack + mục "Chạy full stack" + mục Observability mới), CHANGELOG (Phase 13 entry), CLAUDE.md (mục này).
+
+**Phase 14 — Notification + static analysis + CI polish (Hoàn thành 2026-07-13, cùng ngày với Phase 12-13):**
+
+Theo roadmap gốc (`C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-hinton.md`, Phase 14). User chọn MailHog (SMTP giả lập cho dev, không gửi mail thật ra ngoài) thay vì tích hợp SMTP provider thật — hợp lý vì project chưa có domain/hạ tầng production nào cần gửi mail thật.
+
+- [x] **1. `EmailService`** (`service/EmailService.java`) — wrapper `JavaMailSender.send(SimpleMailMessage)`, bọc try/catch nuốt mọi exception + `log.error` thay vì propagate. **Quyết định thiết kế quan trọng**: gửi email là side-effect, KHÔNG được làm fail transaction chính — nếu SMTP down, đặt lịch/huỷ lịch/quên mật khẩu vẫn phải thành công, chỉ mất thông báo email (chấp nhận được, khác hẳn nghiệp vụ core).
+- [x] **2. MailHog** (`docker-compose.yml`, service `mailhog` mới, image `mailhog/mailhog:v1.0.1`) — SMTP giả lập `localhost:1025` (không cần auth) + UI xem mail đã gửi tại `localhost:8025`. `spring.mail.*` trong `application.yaml` trỏ mặc định vào đây qua `MAIL_HOST`/`MAIL_PORT` (default `localhost:1025`), đổi sang SMTP thật chỉ cần set env var, không sửa code.
+- [x] **3. Nối 3 luồng nghiệp vụ với email thật**:
+  - `AuthService.forgotPassword` — gửi mã reset qua email, **không còn log token ra server** như trước (Phase 11 để tạm vì chưa có SMTP) — bớt 1 kênh lộ thông tin nhạy cảm giờ không cần thiết nữa.
+  - `AppointmentService.book` — email xác nhận đặt lịch sau khi save thành công.
+  - `AppointmentService.cancel` — email thông báo huỷ lịch sau khi save thành công.
+  - Cả 3 chỗ đều gọi `emailService.send()` sau khi transaction chính đã chắc chắn thành công (sau `repository.save()`), không phải trước.
+- [x] **4. Test**: `EmailServiceTest` (2 test: build đúng `SimpleMailMessage` từ from/to/subject/body, exception từ `mailSender.send()` không propagate ra ngoài). `AuthServiceTest`/`AppointmentServiceTest` cập nhật thêm `@Mock EmailService` + verify gửi đúng người nhận ở luồng thành công.
+- [x] **5. SpotBugs** (`com.github.spotbugs` plugin, gắn vào `check`) — chạy lần đầu phát hiện 34 finding, toàn bộ đều false-positive chuẩn cho project Lombok/JPA: `EI_EXPOSE_REP`/`EI_EXPOSE_REP2` (26+8, entity/DTO trả tham chiếu mutable — convention có chủ đích của project, không phải lỗ hổng thật trong app monolith) và `CT_CONSTRUCTOR_THROW` (2, `JwtUtil` cố tình throw khi key rỗng/yếu — đúng thiết kế fail-fast từ Phase 9). Thêm exclude filter `config/spotbugs/exclude.xml` loại đúng 3 pattern này, giữ nguyên mọi bug pattern khác — sau khi lọc: 0 finding thật.
+- [x] **6. CI polish** (`antijob-ci.yml`) — publish thêm 2 artifact mới: `junit-test-report` (JUnit HTML report) và `spotbugs-report` (SpotBugs HTML+XML), cạnh `jacoco-coverage-report` có sẵn từ Phase 12.
+- [x] **7. Verify toàn bộ, có gửi mail thật** — `./gradlew build` pass (131 test, gồm SpotBugs gate). `docker compose up -d` (thêm `mailhog`) + `bootRun` thật + curl: register/login → forgot-password → book → cancel, mỗi bước xác nhận qua MailHog API (`curl localhost:8025/api/v2/messages`) thấy đúng 3 email tuần tự ("Xác nhận đặt lịch hẹn", "Đặt lại mật khẩu", "Huỷ lịch hẹn") với đúng người nhận, subject tiếng Việt encode UTF-8 đúng chuẩn. Docs cập nhật: README (Tech Stack, mục Email mới, yêu cầu môi trường), `.env.example` (biến `MAIL_*`), CHANGELOG (Phase 14 entry), CLAUDE.md (mục này).
+
+**Roadmap gốc (Phase 9-14) coi như đã hoàn thành toàn bộ.** Không còn phase nào tồn đọng — các việc phát sinh sau này (nếu có) sẽ được thêm thành Phase mới khi user yêu cầu, không dựa vào roadmap cũ nữa.
+
+---
+
+## Đánh giá "sẵn sàng sử dụng" (2026-07-14)
+
+Sau khi roadmap Phase 9-14 hoàn thành, user yêu cầu tiếp tục tới khi dự án "dùng ngon lành được" — thực hiện 1 vòng audit + smoke test end-to-end thật (không chỉ chạy unit test) để xác nhận, thay vì chỉ tin vào checklist.
+
+**Audit tĩnh:** grep toàn bộ `src/main/java` không còn `TODO`/`FIXME`/`XXX` sót lại. Không có secret hardcode ngoài `admin123` (default dev có chủ đích, đã document).
+
+**Smoke test thật, nối tiếp 1 luồng nghiệp vụ hoàn chỉnh** (không phải test rời rạc từng endpoint) — `docker compose up -d` (Postgres+Redis+MailHog) + `bootRun` thật + curl, **không tìm thấy bug nào**:
+1. Admin login → xem/hiểu `clinic-settings` → tạo dịch vụ mới → xem danh sách dentist/work-schedule → tạo tài khoản RECEPTIONIST → toggle dentist active — tất cả 200 đúng shape.
+2. Patient tự đăng ký/login → xem slot trống → xem/sửa hồ sơ (`/patients/me`) → đặt lịch (auto-assign dentist) — 200 đúng, đúng dentist/slot.
+3. Kiểm tra phân quyền chéo: PATIENT gọi `GET /appointments` (danh sách) → đúng 403; RECEPTIONIST gọi cùng endpoint → đúng 200.
+4. RECEPTIONIST confirm → complete lịch hẹn vừa đặt — đúng chuyển trạng thái PENDING→CONFIRMED→COMPLETED.
+5. **Quan trọng nhất**: full flow quên mật khẩu **qua email thật** (không dùng log token nữa từ Phase 14) — forgot-password → lấy token thật từ MailHog API (`curl localhost:8025/api/v2/messages`, parse quoted-printable body bằng Node vì máy không có Python/jq) → reset-password với token đó → login bằng mật khẩu mới thành công → login bằng mật khẩu cũ bị từ chối đúng → dùng lại token đã dùng bị từ chối đúng ("Token không hợp lệ hoặc đã hết hạn"). Đây là regression quan trọng nhất cần verify vì Phase 14 đã xoá hẳn đường log token — nếu email hoặc parse token sai thì tính năng này sẽ hoàn toàn không dùng được, và test đã xác nhận không phải vậy.
+6. Rate limiting: 6 lần gọi `/api/auth/login` liên tiếp → 429 đúng sau khi vượt ngưỡng (ngưỡng tính cộng dồn theo IP trong cửa sổ 60s, kể cả các lần login thành công trước đó trong cùng phiên — đúng thiết kế, không phải bug).
+7. Swagger UI (`/swagger-ui/index.html`) và OpenAPI JSON (`/v3/api-docs`) đều 200.
+
+**Kết luận: dự án đã sẵn sàng cho mục đích dev/demo/portfolio.** Toàn bộ luồng nghiệp vụ chính (đặt lịch, vòng đời appointment, phân quyền 4 role, profile self-service, admin CRUD config, quên/đổi mật khẩu qua email thật, rate limiting, observability) đã được verify thật, không chỉ test tự động. `./gradlew build` xanh (131 test + Jacoco 50%+ + SpotBugs 0 finding thật).
+
+**Giới hạn đã biết, cố tình chưa làm (không chặn "dùng được", chỉ cần biết trước khi lên production thật):**
+- Không có logout/revoke token — JWT sống hết 24h dù đổi mật khẩu/logout. Chấp nhận được cho dev/demo, cần cân nhắc refresh-token hoặc token blacklist nếu lên production thật.
+- Không có Micrometer/Prometheus (bỏ ở Phase 13 vì chưa có hạ tầng scrape).
+- MailHog chỉ dùng được cho dev (không gửi mail thật ra ngoài) — cần đổi `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD` sang SMTP provider thật trước khi có người dùng thật.
+- `admin123` là mật khẩu seed mặc định ở dev — **bắt buộc đổi qua `ADMIN_PASSWORD` trước khi chạy `SPRING_PROFILES_ACTIVE=prod`** (đã có fail-fast tương tự cho JWT_SECRET, nhưng ADMIN_PASSWORD không bắt buộc — nếu để trống ở prod thì đơn giản là không tạo admin nào, không phải lỗ hổng, nhưng cần nhớ set để có tài khoản đầu tiên).

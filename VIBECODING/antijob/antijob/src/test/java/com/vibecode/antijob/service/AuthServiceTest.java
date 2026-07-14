@@ -23,6 +23,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,6 +47,8 @@ class AuthServiceTest {
     private PasswordEncoder passwordEncoder;
     @Mock
     private JwtUtil jwtUtil;
+    @Mock
+    private EmailService emailService;
 
     private AuthService authService;
 
@@ -52,7 +56,8 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(userRepository, patientRepository, dentistRepository, passwordEncoder, jwtUtil, FIXED_CLOCK);
+        authService = new AuthService(userRepository, patientRepository, dentistRepository, passwordEncoder, jwtUtil,
+                emailService, FIXED_CLOCK);
         user = User.builder().id(1L).email(EMAIL).password("hashed-old").role(Role.PATIENT).build();
     }
 
@@ -101,6 +106,7 @@ class AuthServiceTest {
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getResetToken()).isNotBlank();
         assertThat(captor.getValue().getResetTokenExpiry()).isEqualTo(NOW.plusMinutes(30));
+        verify(emailService).send(eq(EMAIL), anyString(), anyString());
     }
 
     @Test
@@ -110,6 +116,7 @@ class AuthServiceTest {
         authService.forgotPassword("unknown@example.com");
 
         verify(userRepository, never()).save(any());
+        verify(emailService, never()).send(anyString(), anyString(), anyString());
     }
 
     // ---------- resetPassword() ----------

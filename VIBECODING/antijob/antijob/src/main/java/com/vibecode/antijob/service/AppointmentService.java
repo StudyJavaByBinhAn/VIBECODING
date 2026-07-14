@@ -46,6 +46,7 @@ public class AppointmentService {
     private final WorkScheduleRepository workScheduleRepository;
     private final ClinicSettingsRepository clinicSettingsRepository;
     private final AppointmentMapper appointmentMapper;
+    private final EmailService emailService;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -113,7 +114,12 @@ public class AppointmentService {
                 .notes(req.getNotes())
                 .build();
 
-        return appointmentMapper.toResponse(appointmentRepository.save(appt));
+        Appointment saved = appointmentRepository.save(appt);
+        emailService.send(patient.getUser().getEmail(), "Xác nhận đặt lịch hẹn",
+                "Bạn đã đặt lịch hẹn thành công với " + dentist.getFullName()
+                        + " (" + service.getName() + ") vào lúc " + req.getStartTime()
+                        + " ngày " + req.getAppointmentDate() + ".");
+        return appointmentMapper.toResponse(saved);
     }
 
     @Transactional
@@ -134,7 +140,11 @@ public class AppointmentService {
         }
 
         appt.setStatus(AppointmentStatus.CANCELLED);
-        return appointmentMapper.toResponse(appointmentRepository.save(appt));
+        Appointment saved = appointmentRepository.save(appt);
+        emailService.send(appt.getPatient().getUser().getEmail(), "Huỷ lịch hẹn",
+                "Lịch hẹn với " + appt.getDentist().getFullName() + " vào lúc " + appt.getStartTime()
+                        + " ngày " + appt.getAppointmentDate() + " đã được huỷ.");
+        return appointmentMapper.toResponse(saved);
     }
 
     @Transactional

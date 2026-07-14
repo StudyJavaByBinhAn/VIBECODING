@@ -4,6 +4,29 @@
 
 ## [Unreleased]
 
+## 2026-07-14 — Đánh giá "sẵn sàng sử dụng"
+
+### Verified
+- Audit tĩnh: không còn `TODO`/`FIXME`/secret hardcode nào ngoài `admin123` (dev default có chủ đích).
+- Smoke test end-to-end thật nối tiếp 1 luồng nghiệp vụ hoàn chỉnh (không phải test rời rạc): admin setup (clinic-settings, tạo dịch vụ, work-schedule, tạo RECEPTIONIST) → patient tự đăng ký/đặt lịch/sửa hồ sơ → phân quyền chéo đúng (PATIENT 403, RECEPTIONIST 200 trên `GET /appointments`) → RECEPTIONIST confirm/complete lịch → **full flow quên/đặt lại mật khẩu qua email thật** (lấy token từ MailHog, không dùng log token nữa) → rate limiting 429 đúng ngưỡng → Swagger UI/OpenAPI 200.
+- **Không tìm thấy bug nào.** Kết luận: dự án sẵn sàng cho mục đích dev/demo/portfolio. Xem chi tiết + giới hạn đã biết trong `CLAUDE.md` mục "Đánh giá sẵn sàng sử dụng".
+
+## Phase 14 — 2026-07-13 (notification + static analysis + CI polish)
+
+### Added
+- `spring-boot-starter-mail` + `EmailService` (wrapper `JavaMailSender`, nuốt exception + log lỗi thay vì propagate — gửi mail thất bại không được làm fail transaction đặt/huỷ lịch hay quên mật khẩu).
+- Email thật gửi qua MailHog (dev, không gửi ra ngoài internet — SMTP `localhost:1025` không cần auth, xem mail tại UI `localhost:8025`):
+  - `AuthService.forgotPassword`: gửi mã reset qua email thay vì log ra server như trước.
+  - `AppointmentService.book`: gửi email xác nhận đặt lịch.
+  - `AppointmentService.cancel`: gửi email xác nhận huỷ lịch.
+- `docker-compose.yml`: service `mailhog` mới (`mailhog/mailhog:v1.0.1`), port `1025` (SMTP) + `8025` (Web UI xem mail đã gửi).
+- SpotBugs (`com.github.spotbugs` plugin) — static analysis gắn vào `check`/`build`. Exclude filter (`config/spotbugs/exclude.xml`) loại `EI_EXPOSE_REP`/`EI_EXPOSE_REP2` (false-positive chuẩn cho entity/DTO Lombok) và `CT_CONSTRUCTOR_THROW` (constructor cố tình fail-fast của `JwtUtil`/`StartupSecurityValidator` — đúng thiết kế, không phải bug).
+- CI (`antijob-ci.yml`): publish thêm JUnit test report (`junit-test-report`) và SpotBugs report (`spotbugs-report`) làm artifact, cạnh Jacoco report có sẵn.
+- `EmailServiceTest` (2 test) + cập nhật `AuthServiceTest`/`AppointmentServiceTest` verify email được gửi đúng người nhận ở các luồng thành công.
+
+### Changed
+- `AuthService.forgotPassword` không còn log token reset ra server (chỉ log "đã gửi email cho X", không lộ token) — thay thế hoàn toàn bằng gửi email thật.
+
 ## Phase 13 — 2026-07-13 (observability/ops)
 
 ### Added

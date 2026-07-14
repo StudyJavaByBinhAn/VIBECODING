@@ -12,17 +12,19 @@ REST API đặt lịch hẹn nha khoa — bệnh nhân đặt lịch, chọn bá
 - **Mapping:** MapStruct (Entity ↔ DTO)
 - **API docs:** springdoc-openapi (Swagger UI)
 - **Observability:** Spring Boot Actuator (`/actuator/health`) · correlation ID (`X-Request-ID`) trong log qua MDC
+- **Email:** Spring Mail (MailHog cho dev — xem [Email](#email))
 - **Test:** JUnit 5 · Mockito · Testcontainers
+- **Static analysis:** SpotBugs
 
 ## Yêu cầu môi trường
 
 - JDK 21
-- Docker (chạy PostgreSQL + Redis)
+- Docker (chạy PostgreSQL + Redis + MailHog)
 
 ## Chạy project (dev — app chạy trực tiếp bằng gradlew)
 
 ```bash
-# 1. Khởi động PostgreSQL + Redis (docker-compose, data giữ qua named volume)
+# 1. Khởi động PostgreSQL + Redis + MailHog (docker-compose, data giữ qua named volume)
 docker compose up -d
 
 # 2. Build + test
@@ -61,6 +63,14 @@ Service `antijob-app` build image tại chỗ, tự nối `DB_HOST=dental-db`/`R
 
 - `GET /actuator/health` — public (không cần JWT), dùng cho Docker `HEALTHCHECK` + load balancer/orchestrator health probe. Chỉ trả `{"status":"UP"|"DOWN"}`, không chi tiết nội bộ (`show-details: never`).
 - Mọi request được gán 1 `requestId` (lấy từ header `X-Request-ID` nếu client gửi, tự sinh UUID nếu không) — trả lại trong response header `X-Request-ID`, và xuất hiện trong mọi dòng log của request đó (`CorrelationIdFilter`, chạy trước cả Spring Security chain). Dùng để nối các dòng log rời rạc của cùng 1 request khi có nhiều request đồng thời.
+
+## Email
+
+Gửi email khi: đặt lịch (xác nhận), huỷ lịch (thông báo), quên mật khẩu (mã reset — thay cho việc chỉ log token ra server trước đây).
+
+- **Dev (mặc định):** MailHog — SMTP giả lập tại `localhost:1025` (không cần auth), xem mail đã gửi tại UI `http://localhost:8025`. Chạy sẵn qua `docker compose up -d`, không cần tài khoản email thật.
+- **Đổi sang SMTP thật khi cần** (Gmail, SendGrid...): set `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD`/`MAIL_SMTP_AUTH=true`/`MAIL_SMTP_STARTTLS=true`/`MAIL_FROM` qua env var (xem [.env.example](.env.example)) — không cần sửa code.
+- Gửi email là side-effect: lỗi SMTP không làm fail nghiệp vụ chính (đặt/huỷ lịch, quên mật khẩu vẫn thành công), chỉ log lỗi server-side (`EmailService`).
 
 ## Chạy production (`SPRING_PROFILES_ACTIVE=prod`)
 

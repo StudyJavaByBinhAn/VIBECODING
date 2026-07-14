@@ -35,6 +35,7 @@ public class AuthService {
     private final DentistRepository dentistRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final EmailService emailService;
     private final Clock clock;
 
     @Transactional
@@ -128,8 +129,11 @@ public class AuthService {
             user.setResetToken(token);
             user.setResetTokenExpiry(LocalDateTime.now(clock).plusMinutes(RESET_TOKEN_VALID_MINUTES));
             userRepository.save(user);
-            log.info("Password reset token cho {}: {} (hết hạn sau {} phút) — TODO gửi qua email khi có SMTP provider",
-                    email, token, RESET_TOKEN_VALID_MINUTES);
+            emailService.send(email, "Đặt lại mật khẩu",
+                    "Mã đặt lại mật khẩu của bạn là: " + token + "\n"
+                            + "Mã có hiệu lực trong " + RESET_TOKEN_VALID_MINUTES + " phút. "
+                            + "Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.");
+            log.info("Đã gửi email đặt lại mật khẩu cho {}", email);
         });
     }
 
