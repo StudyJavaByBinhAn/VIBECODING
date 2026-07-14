@@ -62,6 +62,7 @@ Service `antijob-app` build image tại chỗ, tự nối `DB_HOST=dental-db`/`R
 ## Observability
 
 - `GET /actuator/health` — public (không cần JWT), dùng cho Docker `HEALTHCHECK` + load balancer/orchestrator health probe. Chỉ trả `{"status":"UP"|"DOWN"}`, không chi tiết nội bộ (`show-details: never`).
+- `GET /actuator/prometheus` — public, metrics format chuẩn Prometheus (JVM, HTTP request latency/count theo endpoint, cache hit/miss `dentists-active`/`services-active`/`slots`, Hikari DB pool...). Gắn `application="antijob"` vào mọi metric. Chưa có Prometheus/Grafana thật nào scrape endpoint này — sẵn sàng gắn khi cần dashboard/alerting; nếu deploy ra internet công khai, nên giới hạn network/IP thay vì để `permitAll` như hiện tại.
 - Mọi request được gán 1 `requestId` (lấy từ header `X-Request-ID` nếu client gửi, tự sinh UUID nếu không) — trả lại trong response header `X-Request-ID`, và xuất hiện trong mọi dòng log của request đó (`CorrelationIdFilter`, chạy trước cả Spring Security chain). Dùng để nối các dòng log rời rạc của cùng 1 request khi có nhiều request đồng thời.
 
 ## Email

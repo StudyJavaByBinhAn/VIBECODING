@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## Phase 16 — 2026-07-14 (Micrometer/Prometheus)
+
+### Added
+- `io.micrometer:micrometer-registry-prometheus` — Actuator tự cấu hình `PrometheusMeterRegistry` khi có dependency này trên classpath.
+- `GET /actuator/prometheus` (`permitAll`, cùng nhóm với `/actuator/health`) — JVM, HTTP request latency/count theo endpoint, cache hit/miss, Hikari DB pool, đều gắn label `application="antijob"`.
+
+### Changed
+- `management.endpoints.web.exposure.include` thêm `prometheus` cạnh `health`.
+
 ## Phase 15 — 2026-07-14 (JWT logout/revoke)
 
 ### Added

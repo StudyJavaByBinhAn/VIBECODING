@@ -317,6 +317,19 @@ Sau đánh giá "sẵn sàng sử dụng" (xem mục dưới), user chọn khắ
 
 **Giới hạn còn lại sau Phase 15** — `revokeAllTokens` là "logout mọi thiết bị" (không phải revoke từng token/session riêng lẻ theo thiết bị) — chấp nhận được cho quy mô hiện tại, nhưng nếu sau này cần "đăng xuất thiết bị A mà vẫn giữ thiết bị B" thì cần model theo `jti` + danh sách token đang hoạt động (refresh-token pattern), phức tạp hơn nhiều so với nhu cầu thực tế hiện có.
 
+**Phase 16 — Micrometer/Prometheus (Hoàn thành 2026-07-14, cùng ngày với Phase 15):**
+
+User chọn khắc phục giới hạn "Không có Micrometer/Prometheus" (bỏ qua ở Phase 13 vì lúc đó chưa có hạ tầng scrape) làm việc tiếp theo — chỉ cần nền tảng export metrics đúng chuẩn Prometheus, KHÔNG cần dựng thêm container Prometheus/Grafana thật (vẫn chưa có hạ tầng scrape, nhưng giờ endpoint đã sẵn sàng để gắn vào bất cứ lúc nào).
+
+- [x] **1. `io.micrometer:micrometer-registry-prometheus`** thêm vào `build.gradle` (cạnh `spring-boot-starter-actuator` có sẵn từ Phase 13) — Spring Boot Actuator tự động cấu hình `PrometheusMeterRegistry` khi thấy dependency này trên classpath, không cần code cấu hình thủ công.
+- [x] **2. `application.yaml`**: `management.endpoints.web.exposure.include` thêm `prometheus` (giữ nguyên `health` có sẵn). `management.metrics.tags.application: antijob` — gắn label `application="antijob"` vào mọi metric, cần thiết để phân biệt nếu sau này Prometheus scrape nhiều service.
+- [x] **3. `SecurityConfig`**: `/actuator/prometheus` thêm vào cùng nhóm `permitAll()` với `/actuator/health/**` — theo đúng quyết định đã có ở Phase 13 (health probe không cần JWT), áp dụng tương tự cho metrics scrape (Prometheus scraper thường không mang theo JWT). Chấp nhận được vì đây là project dev/demo chưa expose ra internet công khai; nếu triển khai thật có traffic công khai, nên giới hạn `/actuator/prometheus` theo IP/network riêng thay vì `permitAll` tuyệt đối.
+- [x] **4. Verify thật qua curl** (không cần dựng Prometheus thật để xác nhận): `curl /actuator/prometheus` trả đúng format text Prometheus (`# HELP`/`# TYPE`), có sẵn metric JVM (`application_started_time_seconds`), cache (`cache_gets_total` cho `dentists-active`/`services-active`/`slots` — đúng 3 cache name đã cấu hình từ Phase 4/5), DB connection pool (Hikari), và quan trọng nhất: **`http_server_requests_seconds_count`** tự động ghi nhận đúng method/URI/status cho mỗi request thật đã gọi trong lúc verify (vd. `GET /v3/api-docs` status 200, `GET /api/appointments` không token status 403). Regression: `/actuator/health` vẫn 200, `GET /api/appointments` không token vẫn 403, Swagger vẫn 200.
+- [x] **5. Không có test tự động mới** — đây thuần là khai báo cấu hình (dependency + yaml + security matcher), không có logic nghiệp vụ để unit test; đã verify bằng smoke test thật ở bước 4 thay vì viết test giả cho cấu hình framework.
+- [x] **6. Docs**: README (mục Observability cập nhật thêm Prometheus + cách scrape), `CLAUDE.md` (mục này + xoá dòng giới hạn Micrometer/Prometheus), `CHANGELOG.md` (Phase 16 entry).
+
+**Giới hạn còn lại sau Phase 16** — chưa có Prometheus/Grafana container thật nào chạy để scrape endpoint này (chỉ mới có endpoint sẵn sàng) — cần thêm khi thực sự có nhu cầu dashboard/alerting. `/actuator/prometheus` hiện `permitAll` — nếu deploy ra mạng công khai thật, nên giới hạn theo network/IP allowlist thay vì để public như hiện tại (đang chấp nhận được vì scope dev/demo).
+
 ---
 
 ## Đánh giá "sẵn sàng sử dụng" (2026-07-14)
@@ -338,6 +351,6 @@ Sau khi roadmap Phase 9-14 hoàn thành, user yêu cầu tiếp tục tới khi 
 
 **Giới hạn đã biết, cố tình chưa làm (không chặn "dùng được", chỉ cần biết trước khi lên production thật):**
 - ~~Không có logout/revoke token~~ — đã khắc phục ở Phase 15 (`TokenRevocationService`, xem mục Phase 15 ở trên). Giới hạn còn lại: revoke là theo user (mọi thiết bị), không phải theo từng phiên/thiết bị riêng lẻ.
-- Không có Micrometer/Prometheus (bỏ ở Phase 13 vì chưa có hạ tầng scrape).
+- ~~Không có Micrometer/Prometheus~~ — đã khắc phục ở Phase 16 (`/actuator/prometheus`, xem mục Phase 16 ở trên). Giới hạn còn lại: chưa có Prometheus/Grafana thật nào scrape endpoint này, và endpoint hiện `permitAll` (chấp nhận được cho dev/demo, nên giới hạn network khi deploy thật ra internet công khai).
 - MailHog chỉ dùng được cho dev (không gửi mail thật ra ngoài) — cần đổi `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD` sang SMTP provider thật trước khi có người dùng thật.
 - `admin123` là mật khẩu seed mặc định ở dev — **bắt buộc đổi qua `ADMIN_PASSWORD` trước khi chạy `SPRING_PROFILES_ACTIVE=prod`** (đã có fail-fast tương tự cho JWT_SECRET, nhưng ADMIN_PASSWORD không bắt buộc — nếu để trống ở prod thì đơn giản là không tạo admin nào, không phải lỗ hổng, nhưng cần nhớ set để có tài khoản đầu tiên).
