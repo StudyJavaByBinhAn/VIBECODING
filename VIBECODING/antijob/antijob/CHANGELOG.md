@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## Phase 17 — 2026-07-15 (sửa 3 bug nghiệp vụ phát hiện qua code review)
+
+### Fixed
+- **Double-booking race** cho slot chưa từng có lịch hẹn: `findConflictingForUpdate`'s `SELECT ... FOR UPDATE` chỉ khoá được hàng đã tồn tại, nên 2 request đặt đồng thời cùng 1 slot trống có thể cùng lọt qua. `DentistRepository.findByIdForUpdate` mới khoá hẳn hàng dentist trước khi check trùng, đóng race này.
+- **Buffer bị bỏ qua** khi patient chỉ định dentist trực tiếp (`book()` dùng thời gian thô thay vì cộng `buffer_minutes` như `autoAssignDentist`/`SlotService`) — giờ nhất quán cả 2 nhánh.
+- **`maxAdvanceBookingDays`/`openTime`** cấu hình được qua admin nhưng chưa từng enforce trong `validateBookingWindow` — patient có thể đặt lịch trước giờ mở cửa hoặc xa vô hạn trong tương lai.
+
+### Added
+- `AppointmentServiceTest`: 5 test case mới cho 3 fix trên (openTime, maxAdvanceBookingDays, buffer trên nhánh chỉ định dentist trực tiếp), cập nhật 4 test có sẵn để stub bước lock mới.
+
 ## Phase 16 — 2026-07-14 (Micrometer/Prometheus)
 
 ### Added

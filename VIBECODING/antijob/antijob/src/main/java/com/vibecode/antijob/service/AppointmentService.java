@@ -88,16 +88,27 @@ public class AppointmentService {
         LocalTime endTime = req.getStartTime().plusMinutes(service.getDurationMinutes());
         validateBookingWindow(req.getAppointmentDate(), req.getStartTime(), endTime, settings);
 
+        LocalTime paddedStart = req.getStartTime().minusMinutes(settings.getBufferMinutes());
+        LocalTime paddedEnd = endTime.plusMinutes(settings.getBufferMinutes());
+
         Dentist dentist = (req.getDentistId() != null)
                 ? dentistRepository.findById(req.getDentistId())
                         .filter(Dentist::isActive)
                         .orElseThrow(() -> new IllegalArgumentException(
                                 "Không tìm thấy bác sĩ id=" + req.getDentistId() + " hoặc bác sĩ không còn hoạt động"))
-                : autoAssignDentist(req, endTime, settings);
+                : autoAssignDentist(req, endTime, paddedStart, paddedEnd);
 
-        // Pessimistic lock + kiểm tra conflict
+        // Khoá hẳn hàng dentist trước khi check trùng: nếu chỉ khoá hàng appointment trùng lịch
+        // (findConflictingForUpdate), 2 request đặt cùng 1 slot còn trống có thể cùng thấy "chưa
+        // có gì để khoá" và cùng lọt qua — khoá dentist buộc request thứ 2 đợi request thứ 1
+        // commit/rollback trước, nên lúc check trùng chắc chắn thấy đúng dữ liệu mới nhất.
+        dentistRepository.findByIdForUpdate(dentist.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy bác sĩ id=" + dentist.getId()));
+
+        // Kiểm tra conflict — cộng buffer_minutes cả 2 phía để nhất quán với SlotService
+        // (danh sách slot hiển thị) và autoAssignDentist, tránh đặt sát nhau không có khoảng đệm.
         List<Appointment> conflicts = appointmentRepository.findConflictingForUpdate(
-                dentist.getId(), req.getAppointmentDate(), req.getStartTime(), endTime
+                dentist.getId(), req.getAppointmentDate(), paddedStart, paddedEnd
         );
         if (!conflicts.isEmpty()) {
             throw new IllegalStateException("Slot đã được đặt, vui lòng chọn giờ khác");
@@ -200,6 +211,13 @@ public class AppointmentService {
         if (date.isBefore(LocalDate.now(clock))) {
             throw new IllegalArgumentException("Không thể đặt lịch cho ngày trong quá khứ");
         }
+        if (date.isAfter(LocalDate.now(clock).plusDays(settings.getMaxAdvanceBookingDays()))) {
+            throw new IllegalArgumentException(
+                    "Chỉ có thể đặt lịch trước tối đa " + settings.getMaxAdvanceBookingDays() + " ngày");
+        }
+        if (startTime.isBefore(settings.getOpenTime())) {
+            throw new IllegalArgumentException("Không nhận lịch trước giờ mở cửa " + settings.getOpenTime());
+        }
         if (settings.getBreakStart() != null && settings.getBreakEnd() != null
                 && startTime.isBefore(settings.getBreakEnd()) && endTime.isAfter(settings.getBreakStart())) {
             throw new IllegalArgumentException("Không nhận lịch trong giờ nghỉ trưa");
@@ -209,10 +227,9 @@ public class AppointmentService {
         }
     }
 
-    private Dentist autoAssignDentist(AppointmentRequest req, LocalTime endTime, ClinicSettings settings) {
+    private Dentist autoAssignDentist(AppointmentRequest req, LocalTime endTime,
+                                       LocalTime paddedStart, LocalTime paddedEnd) {
         DayOfWeek dayOfWeek = req.getAppointmentDate().getDayOfWeek();
-        LocalTime paddedStart = req.getStartTime().minusMinutes(settings.getBufferMinutes());
-        LocalTime paddedEnd = endTime.plusMinutes(settings.getBufferMinutes());
 
         List<Dentist> candidates = dentistRepository.findByActiveTrue().stream()
                 .filter(d -> workScheduleRepository.findByDentistIdAndDayOfWeek(d.getId(), dayOfWeek)

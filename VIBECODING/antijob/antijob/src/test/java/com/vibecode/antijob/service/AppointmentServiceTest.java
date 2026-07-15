@@ -92,11 +92,13 @@ class AppointmentServiceTest {
         service = DentalService.builder().id(100L).name("Kham tong quat").durationMinutes(30).build();
         settings = ClinicSettings.builder()
                 .bufferMinutes(10)
+                .openTime(LocalTime.of(8, 0))
                 .breakStart(LocalTime.of(12, 0))
                 .breakEnd(LocalTime.of(13, 0))
                 .closeTime(LocalTime.of(17, 0))
                 .cancelBeforeHours(12)
                 .maxPendingAppointments(3)
+                .maxAdvanceBookingDays(30)
                 .build();
     }
 
@@ -152,6 +154,7 @@ class AppointmentServiceTest {
         when(appointmentRepository.countByPatientIdAndStatus(1L, AppointmentStatus.PENDING)).thenReturn(0L);
         when(dentalServiceRepository.findById(100L)).thenReturn(Optional.of(service));
         when(dentistRepository.findById(10L)).thenReturn(Optional.of(activeDentist));
+        when(dentistRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(activeDentist));
         when(appointmentRepository.findConflictingForUpdate(eq(10L), eq(future), any(), any())).thenReturn(List.of());
         when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
@@ -162,6 +165,7 @@ class AppointmentServiceTest {
         verify(appointmentRepository).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(AppointmentStatus.PENDING);
         assertThat(captor.getValue().getDentist()).isEqualTo(activeDentist);
+        verify(dentistRepository).findByIdForUpdate(10L);
         verify(emailService).send(eq(PATIENT_EMAIL), any(), any());
     }
 
@@ -175,6 +179,7 @@ class AppointmentServiceTest {
         when(appointmentRepository.countByPatientIdAndStatus(1L, AppointmentStatus.PENDING)).thenReturn(0L);
         when(dentalServiceRepository.findById(100L)).thenReturn(Optional.of(service));
         when(dentistRepository.findById(10L)).thenReturn(Optional.of(activeDentist));
+        when(dentistRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(activeDentist));
         when(appointmentRepository.findConflictingForUpdate(eq(10L), eq(future), any(), any()))
                 .thenReturn(List.of(Appointment.builder().build()));
 
@@ -225,6 +230,78 @@ class AppointmentServiceTest {
     }
 
     @Test
+    void book_beforeOpenTime_throwsIllegalArgument() {
+        LocalDate future = TODAY.plusDays(1);
+        AppointmentRequest req = request(10L, future, LocalTime.of(7, 0));
+
+        when(clinicSettingsRepository.findAll()).thenReturn(List.of(settings));
+        when(patientRepository.findByUserEmail(PATIENT_EMAIL)).thenReturn(Optional.of(patient));
+        when(appointmentRepository.countByPatientIdAndStatus(1L, AppointmentStatus.PENDING)).thenReturn(0L);
+        when(dentalServiceRepository.findById(100L)).thenReturn(Optional.of(service));
+
+        assertThatThrownBy(() -> appointmentService.book(req, PATIENT_EMAIL))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void book_beyondMaxAdvanceBookingDays_throwsIllegalArgument() {
+        LocalDate tooFar = TODAY.plusDays(settings.getMaxAdvanceBookingDays() + 1);
+        AppointmentRequest req = request(10L, tooFar, LocalTime.of(9, 0));
+
+        when(clinicSettingsRepository.findAll()).thenReturn(List.of(settings));
+        when(patientRepository.findByUserEmail(PATIENT_EMAIL)).thenReturn(Optional.of(patient));
+        when(appointmentRepository.countByPatientIdAndStatus(1L, AppointmentStatus.PENDING)).thenReturn(0L);
+        when(dentalServiceRepository.findById(100L)).thenReturn(Optional.of(service));
+
+        assertThatThrownBy(() -> appointmentService.book(req, PATIENT_EMAIL))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void book_withinMaxAdvanceBookingDays_succeeds() {
+        LocalDate exactlyAtLimit = TODAY.plusDays(settings.getMaxAdvanceBookingDays());
+        AppointmentRequest req = request(10L, exactlyAtLimit, LocalTime.of(9, 0));
+
+        when(clinicSettingsRepository.findAll()).thenReturn(List.of(settings));
+        when(patientRepository.findByUserEmail(PATIENT_EMAIL)).thenReturn(Optional.of(patient));
+        when(appointmentRepository.countByPatientIdAndStatus(1L, AppointmentStatus.PENDING)).thenReturn(0L);
+        when(dentalServiceRepository.findById(100L)).thenReturn(Optional.of(service));
+        when(dentistRepository.findById(10L)).thenReturn(Optional.of(activeDentist));
+        when(dentistRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(activeDentist));
+        when(appointmentRepository.findConflictingForUpdate(eq(10L), eq(exactlyAtLimit), any(), any())).thenReturn(List.of());
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
+
+        appointmentService.book(req, PATIENT_EMAIL);
+
+        verify(appointmentRepository).save(any());
+    }
+
+    @Test
+    void book_explicitDentist_conflictCheckAppliesBufferMinutes() {
+        // Yêu cầu đặt lịch bắt đầu đúng lúc 1 lịch hẹn khác kết thúc (09:00) — với buffer 10 phút
+        // (settings.bufferMinutes=10), cửa sổ check trùng thực tế phải là [08:50, 09:40], không
+        // phải [09:00, 09:30] thô — nếu không sẽ cho phép đặt sát nhau không có khoảng đệm.
+        LocalDate future = TODAY.plusDays(1);
+        AppointmentRequest req = request(10L, future, LocalTime.of(9, 0));
+
+        when(clinicSettingsRepository.findAll()).thenReturn(List.of(settings));
+        when(patientRepository.findByUserEmail(PATIENT_EMAIL)).thenReturn(Optional.of(patient));
+        when(appointmentRepository.countByPatientIdAndStatus(1L, AppointmentStatus.PENDING)).thenReturn(0L);
+        when(dentalServiceRepository.findById(100L)).thenReturn(Optional.of(service));
+        when(dentistRepository.findById(10L)).thenReturn(Optional.of(activeDentist));
+        when(dentistRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(activeDentist));
+        when(appointmentRepository.findConflictingForUpdate(eq(10L), eq(future), any(), any())).thenReturn(List.of());
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
+
+        appointmentService.book(req, PATIENT_EMAIL);
+
+        verify(appointmentRepository).findConflictingForUpdate(
+                10L, future, LocalTime.of(8, 50), LocalTime.of(9, 40));
+    }
+
+    @Test
     void book_maxPendingReached_throwsIllegalArgument_skipsDentistAndServiceLookup() {
         LocalDate future = TODAY.plusDays(1);
         AppointmentRequest req = request(10L, future, LocalTime.of(9, 0));
@@ -265,6 +342,7 @@ class AppointmentServiceTest {
         when(appointmentRepository.countByPatientIdAndStatus(1L, AppointmentStatus.PENDING)).thenReturn(0L);
         when(dentalServiceRepository.findById(100L)).thenReturn(Optional.of(service));
         when(dentistRepository.findByActiveTrue()).thenReturn(List.of(activeDentist));
+        when(dentistRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(activeDentist));
         when(workScheduleRepository.findByDentistIdAndDayOfWeek(eq(10L), any())).thenReturn(Optional.of(schedule));
         when(appointmentRepository.findConflictingForUpdate(anyLong(), any(), any(), any())).thenReturn(List.of());
         when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -290,6 +368,7 @@ class AppointmentServiceTest {
         when(appointmentRepository.countByPatientIdAndStatus(1L, AppointmentStatus.PENDING)).thenReturn(0L);
         when(dentalServiceRepository.findById(100L)).thenReturn(Optional.of(service));
         when(dentistRepository.findByActiveTrue()).thenReturn(List.of(busyDentist, freeDentist));
+        when(dentistRepository.findByIdForUpdate(20L)).thenReturn(Optional.of(freeDentist));
         when(workScheduleRepository.findByDentistIdAndDayOfWeek(anyLong(), any())).thenReturn(Optional.of(schedule));
         when(appointmentRepository.findConflictingForUpdate(anyLong(), any(), any(), any())).thenReturn(List.of());
         when(appointmentRepository.countByDentistIdAndAppointmentDateAndStatusNot(10L, future, AppointmentStatus.CANCELLED)).thenReturn(2L);
