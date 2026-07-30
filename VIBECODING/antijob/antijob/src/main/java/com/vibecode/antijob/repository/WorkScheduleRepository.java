@@ -24,4 +24,7 @@ public interface WorkScheduleRepository extends JpaRepository<WorkSchedule, Long
     Optional<WorkSchedule> findByDentistIdAndDayOfWeek(Long dentistId, DayOfWeek dayOfWeek);
 
     List<WorkSchedule> findByDentistId(Long dentistId);
+
+    // Batch cho autoAssignDentist: 1 query thay vì N query lặp theo từng dentist
+    List<WorkSchedule> findByDentistIdInAndDayOfWeek(List<Long> dentistIds, DayOfWeek dayOfWeek);
 }

@@ -34,6 +34,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -231,22 +234,45 @@ public class AppointmentService {
                                        LocalTime paddedStart, LocalTime paddedEnd) {
         DayOfWeek dayOfWeek = req.getAppointmentDate().getDayOfWeek();
 
-        List<Dentist> candidates = dentistRepository.findByActiveTrue().stream()
-                .filter(d -> workScheduleRepository.findByDentistIdAndDayOfWeek(d.getId(), dayOfWeek)
-                        .filter(WorkSchedule::isActive)
-                        .filter(ws -> !req.getStartTime().isBefore(ws.getStartTime()) && !endTime.isAfter(ws.getEndTime()))
-                        .isPresent())
-                .filter(d -> appointmentRepository.findConflictingForUpdate(
-                        d.getId(), req.getAppointmentDate(), paddedStart, paddedEnd).isEmpty())
+        List<Dentist> activeDentists = dentistRepository.findByActiveTrue();
+        if (activeDentists.isEmpty()) {
+            throw new IllegalArgumentException("Không có bác sĩ nào rảnh vào thời gian yêu cầu");
+        }
+        List<Long> dentistIds = activeDentists.stream().map(Dentist::getId).toList();
+
+        // 3 query gộp thay vì lặp N lần theo từng dentist (trước đây 3N+1 query)
+        Map<Long, WorkSchedule> scheduleByDentistId = workScheduleRepository
+                .findByDentistIdInAndDayOfWeek(dentistIds, dayOfWeek).stream()
+                .collect(Collectors.toMap(ws -> ws.getDentist().getId(), ws -> ws));
+
+        Set<Long> conflictedDentistIds = appointmentRepository
+                .findConflicting(dentistIds, req.getAppointmentDate(), paddedStart, paddedEnd).stream()
+                .map(a -> a.getDentist().getId())
+                .collect(Collectors.toSet());
+
+        List<Dentist> candidates = activeDentists.stream()
+                .filter(d -> {
+                    WorkSchedule ws = scheduleByDentistId.get(d.getId());
+                    return ws != null && ws.isActive()
+                            && !req.getStartTime().isBefore(ws.getStartTime())
+                            && !endTime.isAfter(ws.getEndTime());
+                })
+                .filter(d -> !conflictedDentistIds.contains(d.getId()))
                 .toList();
 
         if (candidates.isEmpty()) {
             throw new IllegalArgumentException("Không có bác sĩ nào rảnh vào thời gian yêu cầu");
         }
 
+        Map<Long, Long> pendingCountByDentistId = appointmentRepository
+                .countByDentistIdsAndAppointmentDateAndStatusNot(
+                        candidates.stream().map(Dentist::getId).toList(),
+                        req.getAppointmentDate(), AppointmentStatus.CANCELLED)
+                .stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
+
         return candidates.stream()
-                .min(Comparator.comparingLong(d -> appointmentRepository.countByDentistIdAndAppointmentDateAndStatusNot(
-                        d.getId(), req.getAppointmentDate(), AppointmentStatus.CANCELLED)))
+                .min(Comparator.comparingLong(d -> pendingCountByDentistId.getOrDefault(d.getId(), 0L)))
                 .orElseThrow();
     }
 
