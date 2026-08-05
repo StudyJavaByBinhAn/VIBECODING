@@ -9,6 +9,9 @@ import com.vibecode.antijob.entity.Dentist;
 import com.vibecode.antijob.entity.Patient;
 import com.vibecode.antijob.entity.User;
 import com.vibecode.antijob.enums.Role;
+import com.vibecode.antijob.event.DomainEvent;
+import com.vibecode.antijob.event.KafkaTopics;
+import com.vibecode.antijob.event.PasswordResetRequestedPayload;
 import com.vibecode.antijob.repository.DentistRepository;
 import com.vibecode.antijob.repository.PatientRepository;
 import com.vibecode.antijob.repository.UserRepository;
@@ -16,11 +19,13 @@ import com.vibecode.antijob.security.JwtUtil;
 import com.vibecode.antijob.security.TokenRevocationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -38,6 +43,7 @@ public class AuthService {
     private final JwtUtil jwtUtil;
     private final EmailService emailService;
     private final TokenRevocationService tokenRevocationService;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
     private final Clock clock;
 
     @Transactional
@@ -133,13 +139,25 @@ public class AuthService {
         // Không throw dù email không tồn tại — tránh lộ thông tin tài khoản nào đã đăng ký (account enumeration)
         userRepository.findByEmail(email).ifPresent(user -> {
             String token = UUID.randomUUID().toString();
+            LocalDateTime expiresAt = LocalDateTime.now(clock).plusMinutes(RESET_TOKEN_VALID_MINUTES);
             user.setResetToken(token);
-            user.setResetTokenExpiry(LocalDateTime.now(clock).plusMinutes(RESET_TOKEN_VALID_MINUTES));
+            user.setResetTokenExpiry(expiresAt);
             userRepository.save(user);
             emailService.send(email, "Đặt lại mật khẩu",
                     "Mã đặt lại mật khẩu của bạn là: " + token + "\n"
                             + "Mã có hiệu lực trong " + RESET_TOKEN_VALID_MINUTES + " phút. "
                             + "Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.");
+            kafkaTemplate.send(KafkaTopics.AUTH_PASSWORD_RESET_REQUESTED, email, DomainEvent.<Object>builder()
+                    .eventId(UUID.randomUUID().toString())
+                    .eventType(KafkaTopics.AUTH_PASSWORD_RESET_REQUESTED)
+                    .version(1)
+                    .occurredAt(Instant.now(clock))
+                    .data(PasswordResetRequestedPayload.builder()
+                            .userEmail(email)
+                            .resetToken(token)
+                            .expiresAt(expiresAt)
+                            .build())
+                    .build());
             log.info("Đã gửi email đặt lại mật khẩu cho {}", email);
         });
     }

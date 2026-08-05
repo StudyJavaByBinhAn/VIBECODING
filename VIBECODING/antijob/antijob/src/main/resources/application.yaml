@@ -31,6 +31,16 @@ spring:
   cache:
     type: redis
 
+  # Producer only ở giai đoạn này — chưa có consumer, event chỉ để email-service (đang phát triển
+  # riêng) tiêu thụ sau. JSON qua spring-kafka, không Avro/Schema Registry (không cần cho scope này).
+  # Boot 4.1 không autoconfigure Kafka (xem config/KafkaProducerConfig.java) nên chỉ cần đúng 1
+  # property này — serializer khai báo thẳng trong code, không qua spring.kafka.producer.*.
+  kafka:
+    # Default localhost:9094 khớp listener PLAINTEXT_HOST của docker-compose (dùng khi chạy
+    # bootRun trực tiếp trên host). Trong container (antijob-app profile full), override thành
+    # kafka:9092 (listener PLAINTEXT nội bộ) qua KAFKA_BOOTSTRAP_SERVERS.
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+
   # MailHog (dev): SMTP không cần auth tại localhost:1025, UI xem mail tại localhost:8025.
   # Prod: đổi MAIL_HOST/MAIL_PORT trỏ SMTP relay thật, set MAIL_USERNAME/MAIL_PASSWORD nếu cần auth.
   mail:

@@ -10,6 +10,7 @@ import com.vibecode.antijob.entity.Patient;
 import com.vibecode.antijob.entity.User;
 import com.vibecode.antijob.entity.WorkSchedule;
 import com.vibecode.antijob.enums.AppointmentStatus;
+import com.vibecode.antijob.event.DomainEvent;
 import com.vibecode.antijob.mapper.AppointmentMapper;
 import com.vibecode.antijob.repository.AppointmentRepository;
 import com.vibecode.antijob.repository.ClinicSettingsRepository;
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -74,6 +76,8 @@ class AppointmentServiceTest {
     private AppointmentMapper appointmentMapper;
     @Mock
     private EmailService emailService;
+    @Mock
+    private KafkaTemplate<String, Object> kafkaTemplate;
 
     private AppointmentService appointmentService;
 
@@ -86,7 +90,7 @@ class AppointmentServiceTest {
     void setUp() {
         appointmentService = new AppointmentService(appointmentRepository, patientRepository, dentistRepository,
                 dentalServiceRepository, workScheduleRepository, clinicSettingsRepository, appointmentMapper,
-                emailService, FIXED_CLOCK);
+                emailService, kafkaTemplate, FIXED_CLOCK);
 
         patient = Patient.builder().id(1L).user(User.builder().email(PATIENT_EMAIL).build()).fullName("Nguyen Van A").build();
         activeDentist = Dentist.builder().id(10L).active(true)
@@ -158,7 +162,13 @@ class AppointmentServiceTest {
         when(dentistRepository.findById(10L)).thenReturn(Optional.of(activeDentist));
         when(dentistRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(activeDentist));
         when(appointmentRepository.findConflictingForUpdate(eq(10L), eq(future), any(), any())).thenReturn(List.of());
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(999L);
+            }
+            return saved;
+        });
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
 
         appointmentService.book(req, PATIENT_EMAIL);
@@ -271,7 +281,13 @@ class AppointmentServiceTest {
         when(dentistRepository.findById(10L)).thenReturn(Optional.of(activeDentist));
         when(dentistRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(activeDentist));
         when(appointmentRepository.findConflictingForUpdate(eq(10L), eq(exactlyAtLimit), any(), any())).thenReturn(List.of());
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(999L);
+            }
+            return saved;
+        });
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
 
         appointmentService.book(req, PATIENT_EMAIL);
@@ -294,7 +310,13 @@ class AppointmentServiceTest {
         when(dentistRepository.findById(10L)).thenReturn(Optional.of(activeDentist));
         when(dentistRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(activeDentist));
         when(appointmentRepository.findConflictingForUpdate(eq(10L), eq(future), any(), any())).thenReturn(List.of());
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(999L);
+            }
+            return saved;
+        });
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
 
         appointmentService.book(req, PATIENT_EMAIL);
@@ -350,7 +372,13 @@ class AppointmentServiceTest {
         when(appointmentRepository.findConflicting(anyList(), any(), any(), any())).thenReturn(List.of());
         when(appointmentRepository.countByDentistIdsAndAppointmentDateAndStatusNot(anyList(), eq(future), eq(AppointmentStatus.CANCELLED)))
                 .thenReturn(Collections.singletonList(new Object[]{10L, 0L}));
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(999L);
+            }
+            return saved;
+        });
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
 
         appointmentService.book(req, PATIENT_EMAIL);
@@ -381,7 +409,13 @@ class AppointmentServiceTest {
         when(appointmentRepository.findConflicting(anyList(), any(), any(), any())).thenReturn(List.of());
         when(appointmentRepository.countByDentistIdsAndAppointmentDateAndStatusNot(anyList(), eq(future), eq(AppointmentStatus.CANCELLED)))
                 .thenReturn(List.<Object[]>of(new Object[]{10L, 2L}, new Object[]{20L, 0L}));
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(999L);
+            }
+            return saved;
+        });
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
 
         appointmentService.book(req, PATIENT_EMAIL);
@@ -429,7 +463,13 @@ class AppointmentServiceTest {
 
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
         when(clinicSettingsRepository.findAll()).thenReturn(List.of(settings));
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(999L);
+            }
+            return saved;
+        });
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
 
         appointmentService.cancel(1L, adminAuth());
@@ -488,7 +528,13 @@ class AppointmentServiceTest {
                 .patient(patient).dentist(activeDentist).build();
 
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(999L);
+            }
+            return saved;
+        });
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
 
         appointmentService.confirm(1L, adminAuth());
@@ -504,7 +550,13 @@ class AppointmentServiceTest {
                 .patient(patient).dentist(activeDentist).build();
 
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(999L);
+            }
+            return saved;
+        });
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
 
         appointmentService.confirm(1L, receptionistAuth());
@@ -520,7 +572,13 @@ class AppointmentServiceTest {
                 .patient(patient).dentist(activeDentist).build();
 
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(999L);
+            }
+            return saved;
+        });
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
 
         appointmentService.confirm(1L, dentistAuth(activeDentist.getUser().getEmail()));
@@ -572,7 +630,13 @@ class AppointmentServiceTest {
                 .patient(patient).dentist(activeDentist).build();
 
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(999L);
+            }
+            return saved;
+        });
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
 
         appointmentService.complete(1L, adminAuth());
@@ -602,7 +666,13 @@ class AppointmentServiceTest {
                 .patient(patient).dentist(activeDentist).build();
 
         when(appointmentRepository.findById(1L)).thenReturn(Optional.of(appt));
-        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(appointmentRepository.save(any(Appointment.class))).thenAnswer(inv -> {
+            Appointment saved = inv.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(999L);
+            }
+            return saved;
+        });
         when(appointmentMapper.toResponse(any(Appointment.class))).thenReturn(AppointmentResponse.builder().build());
 
         appointmentService.markNoShow(1L, receptionistAuth());

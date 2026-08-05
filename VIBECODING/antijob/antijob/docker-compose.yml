@@ -38,6 +38,56 @@ services:
       - "${MAIL_SMTP_PORT:-1025}:1025"
       - "${MAIL_WEB_PORT:-8025}:8025"
 
+  # Kafka (KRaft mode — không cần Zookeeper) cho event đặt lịch/huỷ lịch/quên mật khẩu, dùng
+  # bởi email-service (đang phát triển ở antijob/email-service/) và về sau customer-care-service.
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: dental-kafka
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+      - "${KAFKA_HOST_PORT:-9094}:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # 2 listener riêng: PLAINTEXT cho container-to-container (antijob-app, email-service... nói
+      # chuyện qua "kafka:9092"), PLAINTEXT_HOST cho app chạy trực tiếp trên host qua bootRun (nói
+      # chuyện qua "localhost:9094") — thiếu listener thứ 2 này, client trên host nhận được cluster
+      # metadata quảng cáo "kafka:9092" từ broker và không resolve được hostname đó (gotcha đã gặp
+      # thật lúc verify: producer connect được bootstrap nhưng UnknownHostException khi gửi thật).
+      KAFKA_LISTENERS: PLAINTEXT://:9092,PLAINTEXT_HOST://:9094,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Cluster 1 node duy nhất — internal topic __consumer_offsets mặc định cần replication
+      # factor 3, không bao giờ tạo được với 1 broker (consumer group không hoạt động được, dù
+      # message vẫn ghi vào topic bình thường — đã xác nhận thật lúc verify: offset tăng đúng
+      # nhưng console-consumer luôn thấy 0 message vì group coordinator không khởi tạo được).
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # UI xem topic/message trực quan tại http://localhost:8081 — chỉ để quan sát, không cần cho app chạy.
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: dental-kafka-ui
+    ports:
+      - "${KAFKA_UI_PORT:-8081}:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
   # Chạy full app trong container (thay vì ./gradlew bootRun trên host) — không nằm trong
   # `docker compose up -d` mặc định (tránh xung đột port 8080 với dev chạy bootRun song song).
   # Bật bằng: docker compose --profile full up -d
@@ -52,6 +102,8 @@ services:
         condition: service_healthy
       mailhog:
         condition: service_started
+      kafka:
+        condition: service_healthy
     # Chỉ override DB_HOST/REDIS_HOST/MAIL_HOST (bắt buộc — "localhost" không resolve được sang container
     # khác trong network) + giữ khớp credential với service postgres/redis phía trên. Cố tình
     # KHÔNG truyền JWT_SECRET/ADMIN_EMAIL/ADMIN_PASSWORD/CORS_ALLOWED_ORIGINS/SPRING_PROFILES_ACTIVE
@@ -70,6 +122,7 @@ services:
       REDIS_PORT: 6379
       MAIL_HOST: mailhog
       MAIL_PORT: 1025
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "8080:8080"
     healthcheck:

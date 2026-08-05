@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## Phase 18 (Phase A) — 2026-08-06 (hạ tầng Kafka + publish event, bước đầu tách microservice)
+
+### Added
+- Kafka (KRaft mode) + Kafka UI trong `docker-compose.yml` — 2 listener (`PLAINTEXT` nội bộ container, `PLAINTEXT_HOST` cho host chạy `bootRun`).
+- `config/KafkaProducerConfig.java` — tự khai báo `ProducerFactory`/`KafkaTemplate<String, Object>` (Boot 4.1 không autoconfigure Kafka).
+- `event/` package: `DomainEvent<T>` (envelope chung), `KafkaTopics`, payload DTO cho 3 event (`appointment.booked`, `appointment.cancelled`, `auth.password-reset-requested`).
+- `AppointmentService.book()`/`cancel()`, `AuthService.forgotPassword()` publish event lên Kafka song song với gửi email hiện có (additive, chưa xoá `EmailService` — việc đó thuộc Phase B).
+
+### Fixed
+- Gotcha Kafka cluster 1-node: `__consumer_offsets` không tạo được với `replication.factor=3` mặc định khi chỉ có 1 broker — set về 1, nếu không consumer group không bao giờ hoạt động dù producer gửi message thành công bình thường.
+
 ## Phase 17 — 2026-07-15 (sửa 3 bug nghiệp vụ phát hiện qua code review)
 
 ### Fixed

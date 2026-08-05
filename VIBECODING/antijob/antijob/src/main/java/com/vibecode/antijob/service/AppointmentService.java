@@ -10,6 +10,10 @@ import com.vibecode.antijob.entity.DentalService;
 import com.vibecode.antijob.entity.Patient;
 import com.vibecode.antijob.entity.WorkSchedule;
 import com.vibecode.antijob.enums.AppointmentStatus;
+import com.vibecode.antijob.event.AppointmentBookedPayload;
+import com.vibecode.antijob.event.AppointmentCancelledPayload;
+import com.vibecode.antijob.event.DomainEvent;
+import com.vibecode.antijob.event.KafkaTopics;
 import com.vibecode.antijob.mapper.AppointmentMapper;
 import com.vibecode.antijob.repository.AppointmentRepository;
 import com.vibecode.antijob.repository.ClinicSettingsRepository;
@@ -21,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -29,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -36,6 +42,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -50,6 +57,7 @@ public class AppointmentService {
     private final ClinicSettingsRepository clinicSettingsRepository;
     private final AppointmentMapper appointmentMapper;
     private final EmailService emailService;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -133,6 +141,16 @@ public class AppointmentService {
                 "Bạn đã đặt lịch hẹn thành công với " + dentist.getFullName()
                         + " (" + service.getName() + ") vào lúc " + req.getStartTime()
                         + " ngày " + req.getAppointmentDate() + ".");
+        publishEvent(KafkaTopics.APPOINTMENT_BOOKED, saved.getId().toString(),
+                AppointmentBookedPayload.builder()
+                        .appointmentId(saved.getId())
+                        .patientEmail(patient.getUser().getEmail())
+                        .patientName(patient.getFullName())
+                        .dentistName(dentist.getFullName())
+                        .serviceName(service.getName())
+                        .appointmentDate(req.getAppointmentDate())
+                        .startTime(req.getStartTime())
+                        .build());
         return appointmentMapper.toResponse(saved);
     }
 
@@ -158,6 +176,14 @@ public class AppointmentService {
         emailService.send(appt.getPatient().getUser().getEmail(), "Huỷ lịch hẹn",
                 "Lịch hẹn với " + appt.getDentist().getFullName() + " vào lúc " + appt.getStartTime()
                         + " ngày " + appt.getAppointmentDate() + " đã được huỷ.");
+        publishEvent(KafkaTopics.APPOINTMENT_CANCELLED, saved.getId().toString(),
+                AppointmentCancelledPayload.builder()
+                        .appointmentId(saved.getId())
+                        .patientEmail(appt.getPatient().getUser().getEmail())
+                        .dentistName(appt.getDentist().getFullName())
+                        .appointmentDate(appt.getAppointmentDate())
+                        .startTime(appt.getStartTime())
+                        .build());
         return appointmentMapper.toResponse(saved);
     }
 
@@ -198,6 +224,16 @@ public class AppointmentService {
 
         appt.setStatus(AppointmentStatus.NO_SHOW);
         return appointmentMapper.toResponse(appointmentRepository.save(appt));
+    }
+
+    private void publishEvent(String topic, String key, Object payload) {
+        kafkaTemplate.send(topic, key, DomainEvent.<Object>builder()
+                .eventId(UUID.randomUUID().toString())
+                .eventType(topic)
+                .version(1)
+                .occurredAt(Instant.now(clock))
+                .data(payload)
+                .build());
     }
 
     private Appointment getAppointmentOrThrow(Long id) {

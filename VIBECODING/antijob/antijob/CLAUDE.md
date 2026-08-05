@@ -348,6 +348,26 @@ Sau khi roadmap gốc xong (Phase 9-16), user yêu cầu review toàn bộ codeb
 
 ---
 
+## Phase 18 — Tách microservice (Booking / Email / Customer-care) qua Kafka — ĐANG TIẾN HÀNH
+
+Roadmap gốc (Phase 1-17) coi như đã xong hoàn toàn — không còn bug/checklist tồn đọng. User muốn bước tiếp theo là **học/thực hành microservices + Kafka để làm portfolio**, không phải nhu cầu sản xuất thật. Kế hoạch đầy đủ (đã duyệt qua Plan Mode) lưu tại `C:\Users\ADMIN\.claude\plans\linked-crunching-dahl.md` — tham khảo file đó để biết toàn bộ kiến trúc 3 service, quyết định đã chốt (chat model 1:N, MongoDB, Kafka cho cả 3 service, audit log email), và roadmap Phase A→D.
+
+**Phase A — Hạ tầng Kafka + booking-service publish event (Hoàn thành 2026-08-06):**
+
+- [x] **1. `docker-compose.yml`**: thêm service `kafka` (`apache/kafka:3.9.0`, KRaft mode — không Zookeeper) + `kafka-ui` (`provectuslabs/kafka-ui`, port 8081, xem topic/message trực quan). Kafka có **2 listener**: `PLAINTEXT` (`kafka:9092`, container-to-container) và `PLAINTEXT_HOST` (`localhost:9094`, dùng khi chạy `bootRun` trực tiếp trên host) — thiếu listener thứ 2 sẽ khiến client trên host nhận cluster metadata quảng cáo `kafka:9092` và không resolve được hostname đó (gotcha gặp thật lúc verify, xem mục 5).
+- [x] **2. `build.gradle`**: thêm `org.springframework.kafka:spring-kafka`.
+- [x] **3. `config/KafkaProducerConfig.java`** (mới) — **Spring Boot 4.1.0 không còn autoconfigure Kafka** (đã xác nhận: không có `KafkaProperties`/`KafkaAutoConfiguration` ở bất kỳ đâu trong classpath hiện tại, khác hẳn Boot 2.x/3.x) nên phải tự khai báo `ProducerFactory<String, Object>`/`KafkaTemplate<String, Object>` tường minh, đọc `spring.kafka.bootstrap-servers` qua `@Value` thay vì dựa vào cơ chế autoconfig không tồn tại. Value serializer dùng `JacksonJsonSerializer` (Jackson 3, đúng convention Boot 4 đã áp dụng xuyên suốt dự án) — **không** dùng `JsonSerializer` cũ (đã deprecated forRemoval từ spring-kafka 4.0).
+- [x] **4. `event/` package (mới)**: `DomainEvent<T>` (envelope chung: `eventId`/`eventType`/`version`/`occurredAt`/`data`), `KafkaTopics` (hằng số tên topic), `AppointmentBookedPayload`/`AppointmentCancelledPayload`/`PasswordResetRequestedPayload` (payload có cấu trúc, không phải text tiếng Việt dựng sẵn — consumer tương lai tự sở hữu template của nó).
+- [x] **5. `AppointmentService.book()`/`cancel()`, `AuthService.forgotPassword()`**: **thêm** `kafkaTemplate.send(topic, key, event)` song song với `emailService.send(...)` hiện có (cố tình additive, không xoá gì — xoá `EmailService` là việc của Phase B sau khi có consumer thật). Key Kafka: `appointmentId`/`email` tương ứng — đảm bảo ordering đúng theo entity.
+- [x] **6. Test**: cập nhật `AppointmentServiceTest`/`AuthServiceTest` (constructor thêm `KafkaTemplate` mock). **Gotcha test đáng nhớ**: `book()` giờ gọi `saved.getId().toString()` làm Kafka key, nhưng mock `appointmentRepository.save()` trước đây chỉ echo lại entity chưa từng có `id` (BIGSERIAL chỉ sinh ID khi có DB thật) → NPE hàng loạt ở mọi test happy-path. Fix: stub `save()` tự gán `id` nếu chưa có thay vì echo nguyên trạng.
+- [x] **7. Verify thật đầy đủ** (không chỉ unit test) — `./gradlew build` pass (143 test, Jacoco + SpotBugs sạch). `docker compose up -d` (thêm kafka/kafka-ui) + `bootRun` + curl book/cancel/forgot-password → dùng `kafka-console-consumer.sh` xác nhận cả 3 topic (`appointment.booked`, `appointment.cancelled`, `auth.password-reset-requested`) nhận đúng JSON event, đồng thời MailHog vẫn nhận đủ 3 email như cũ (regression-free, đúng thiết kế additive). Regression chuẩn: health/swagger/403-không-token không đổi.
+- [x] **8. Gotcha hạ tầng Kafka 1-node phát hiện lúc verify** (đáng nhớ, dễ tái phạm): message **thực sự đã ghi vào topic đúng** (`kafka-get-offsets.sh` xác nhận offset tăng đúng) nhưng `kafka-console-consumer` luôn báo "0 messages" — nguyên nhân: topic nội bộ `__consumer_offsets` (bắt buộc cho mọi consumer group) mặc định cần `replication.factor=3`, không bao giờ tạo được với cluster chỉ có 1 broker, nên consumer group coordinator không khởi tạo được dù producer hoàn toàn khoẻ mạnh. **Fix**: set `KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR`/`KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR`/`KAFKA_TRANSACTION_STATE_LOG_MIN_ISR` đều = 1 trong docker-compose — bắt buộc cho mọi Kafka cluster dev 1-node, dễ bỏ sót vì producer-side không hề báo lỗi.
+- [x] **9. Docs**: `CLAUDE.md` (mục này), `CHANGELOG.md` (Phase 18 Phase A entry).
+
+**Chưa làm (Phase B/C/D — xem kế hoạch đầy đủ trong plan file)**: email-service (project Gradle riêng, consume 4 topic, xoá `EmailService` khỏi booking-service), customer-care-service (WebSocket/STOMP chat + MongoDB + JWT verify copy-paste + publish `chat.message-sent`), orchestration/CI/docs đầy đủ cho cả 3 service.
+
+---
+
 ## Đánh giá "sẵn sàng sử dụng" (2026-07-14)
 
 Sau khi roadmap Phase 9-14 hoàn thành, user yêu cầu tiếp tục tới khi dự án "dùng ngon lành được" — thực hiện 1 vòng audit + smoke test end-to-end thật (không chỉ chạy unit test) để xác nhận, thay vì chỉ tin vào checklist.

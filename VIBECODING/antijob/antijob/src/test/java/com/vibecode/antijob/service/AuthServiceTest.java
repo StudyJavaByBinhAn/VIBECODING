@@ -3,6 +3,7 @@ package com.vibecode.antijob.service;
 import com.vibecode.antijob.dto.ChangePasswordRequest;
 import com.vibecode.antijob.entity.User;
 import com.vibecode.antijob.enums.Role;
+import com.vibecode.antijob.event.DomainEvent;
 import com.vibecode.antijob.repository.DentistRepository;
 import com.vibecode.antijob.repository.PatientRepository;
 import com.vibecode.antijob.repository.UserRepository;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Clock;
@@ -52,6 +54,8 @@ class AuthServiceTest {
     private EmailService emailService;
     @Mock
     private TokenRevocationService tokenRevocationService;
+    @Mock
+    private KafkaTemplate<String, Object> kafkaTemplate;
 
     private AuthService authService;
 
@@ -60,7 +64,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(userRepository, patientRepository, dentistRepository, passwordEncoder, jwtUtil,
-                emailService, tokenRevocationService, FIXED_CLOCK);
+                emailService, tokenRevocationService, kafkaTemplate, FIXED_CLOCK);
         user = User.builder().id(1L).email(EMAIL).password("hashed-old").role(Role.PATIENT).build();
     }
 
