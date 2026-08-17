@@ -12,7 +12,7 @@ REST API đặt lịch hẹn nha khoa — bệnh nhân đặt lịch, chọn bá
 - **Mapping:** MapStruct (Entity ↔ DTO)
 - **API docs:** springdoc-openapi (Swagger UI)
 - **Observability:** Spring Boot Actuator (`/actuator/health`) · correlation ID (`X-Request-ID`) trong log qua MDC
-- **Email:** Spring Mail (MailHog cho dev — xem [Email](#email))
+- **Events:** Kafka (KRaft) — publish `appointment.booked`/`appointment.cancelled`/`auth.password-reset-requested`, consume bởi `antijob/email-service/` (xem [Email](#email))
 - **Test:** JUnit 5 · Mockito · Testcontainers
 - **Static analysis:** SpotBugs
 
@@ -67,11 +67,11 @@ Service `antijob-app` build image tại chỗ, tự nối `DB_HOST=dental-db`/`R
 
 ## Email
 
-Gửi email khi: đặt lịch (xác nhận), huỷ lịch (thông báo), quên mật khẩu (mã reset — thay cho việc chỉ log token ra server trước đây).
+Booking-service **không tự gửi email** — nó chỉ publish 3 event lên Kafka (`appointment.booked`, `appointment.cancelled`, `auth.password-reset-requested`) khi đặt lịch/huỷ lịch/quên mật khẩu. Gửi email thật là việc của service riêng `antijob/email-service/` (xem `email-service/README` khi có, hoặc `CLAUDE.md` mục Phase 18 Phase B) — service đó consume 3 topic trên, gửi mail qua MailHog (dev) hoặc SMTP thật, và ghi audit log `sent_emails`.
 
-- **Dev (mặc định):** MailHog — SMTP giả lập tại `localhost:1025` (không cần auth), xem mail đã gửi tại UI `http://localhost:8025`. Chạy sẵn qua `docker compose up -d`, không cần tài khoản email thật.
-- **Đổi sang SMTP thật khi cần** (Gmail, SendGrid...): set `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD`/`MAIL_SMTP_AUTH=true`/`MAIL_SMTP_STARTTLS=true`/`MAIL_FROM` qua env var (xem [.env.example](.env.example)) — không cần sửa code.
-- Gửi email là side-effect: lỗi SMTP không làm fail nghiệp vụ chính (đặt/huỷ lịch, quên mật khẩu vẫn thành công), chỉ log lỗi server-side (`EmailService`).
+- **Dev**: chạy thêm `cd antijob/email-service && ./gradlew bootRun` cạnh booking-service để email thực sự được gửi — nếu không chạy, event vẫn publish lên Kafka bình thường nhưng không ai tiêu thụ, không có mail nào tới MailHog.
+- **MailHog**: SMTP giả lập tại `localhost:1025` (không cần auth), xem mail đã gửi tại UI `http://localhost:8025`. Chạy sẵn qua `docker compose up -d` (booking-service).
+- Publish event lên Kafka là side-effect ở phía booking-service: lỗi Kafka không làm fail nghiệp vụ chính (đặt/huỷ lịch, quên mật khẩu vẫn thành công) — xem `AppointmentService`/`AuthService`.
 
 ## Chạy production (`SPRING_PROFILES_ACTIVE=prod`)
 

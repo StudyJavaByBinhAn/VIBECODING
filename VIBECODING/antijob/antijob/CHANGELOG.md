@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## Phase 18 (Phase B) — 2026-08-17 (email-service tách riêng, xoá EmailService khỏi booking-service)
+
+### Added
+- `antijob/email-service/` — project Gradle độc lập mới, consume 3 topic Kafka (`appointment.booked`, `appointment.cancelled`, `auth.password-reset-requested`), gửi email qua MailHog, ghi audit log `sent_emails` (Postgres riêng `email_service_db`).
+
+### Removed
+- `EmailService`/`EmailServiceTest` khỏi booking-service — gửi email không còn là việc của booking-service, chỉ còn publish Kafka event. `spring-boot-starter-mail` và toàn bộ `spring.mail.*`/`mail.from`/`management.health.mail.enabled` config đã xoá khỏi booking-service (chuyển sang `email-service`).
+
 ## Phase 18 (Phase A) — 2026-08-06 (hạ tầng Kafka + publish event, bước đầu tách microservice)
 
 ### Added

@@ -11,6 +11,7 @@ import com.vibecode.antijob.entity.User;
 import com.vibecode.antijob.entity.WorkSchedule;
 import com.vibecode.antijob.enums.AppointmentStatus;
 import com.vibecode.antijob.event.DomainEvent;
+import com.vibecode.antijob.event.KafkaTopics;
 import com.vibecode.antijob.mapper.AppointmentMapper;
 import com.vibecode.antijob.repository.AppointmentRepository;
 import com.vibecode.antijob.repository.ClinicSettingsRepository;
@@ -75,8 +76,6 @@ class AppointmentServiceTest {
     @Mock
     private AppointmentMapper appointmentMapper;
     @Mock
-    private EmailService emailService;
-    @Mock
     private KafkaTemplate<String, Object> kafkaTemplate;
 
     private AppointmentService appointmentService;
@@ -90,7 +89,7 @@ class AppointmentServiceTest {
     void setUp() {
         appointmentService = new AppointmentService(appointmentRepository, patientRepository, dentistRepository,
                 dentalServiceRepository, workScheduleRepository, clinicSettingsRepository, appointmentMapper,
-                emailService, kafkaTemplate, FIXED_CLOCK);
+                kafkaTemplate, FIXED_CLOCK);
 
         patient = Patient.builder().id(1L).user(User.builder().email(PATIENT_EMAIL).build()).fullName("Nguyen Van A").build();
         activeDentist = Dentist.builder().id(10L).active(true)
@@ -178,7 +177,7 @@ class AppointmentServiceTest {
         assertThat(captor.getValue().getStatus()).isEqualTo(AppointmentStatus.PENDING);
         assertThat(captor.getValue().getDentist()).isEqualTo(activeDentist);
         verify(dentistRepository).findByIdForUpdate(10L);
-        verify(emailService).send(eq(PATIENT_EMAIL), any(), any());
+        verify(kafkaTemplate).send(eq(KafkaTopics.APPOINTMENT_BOOKED), eq("999"), any());
     }
 
     @Test
@@ -477,7 +476,7 @@ class AppointmentServiceTest {
         ArgumentCaptor<Appointment> captor = ArgumentCaptor.forClass(Appointment.class);
         verify(appointmentRepository).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(AppointmentStatus.CANCELLED);
-        verify(emailService).send(eq(PATIENT_EMAIL), any(), any());
+        verify(kafkaTemplate).send(eq(KafkaTopics.APPOINTMENT_CANCELLED), eq("1"), any());
     }
 
     @Test

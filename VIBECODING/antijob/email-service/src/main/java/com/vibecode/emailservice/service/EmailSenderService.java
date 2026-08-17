@@ -1,4 +1,4 @@
-package com.vibecode.antijob.service;
+package com.vibecode.emailservice.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,16 +10,17 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class EmailService {
+public class EmailSenderService {
 
     private final JavaMailSender mailSender;
 
     @Value("${mail.from}")
     private String from;
 
-    // Gửi mail là side-effect, không phải business rule — lỗi SMTP (MailHog/relay down...)
-    // không được làm fail transaction chính (đặt lịch, huỷ lịch, quên mật khẩu), chỉ log lại.
-    public void send(String to, String subject, String body) {
+    // Trả về false thay vì nuốt hẳn exception (khác EmailService bên booking-service) vì ở đây
+    // gửi mail LÀ nghiệp vụ chính của service này — caller (EmailEventListener) cần biết kết quả
+    // để ghi đúng status vào audit log sent_emails, không phải chỉ log rồi bỏ qua.
+    public boolean send(String to, String subject, String body) {
         try {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(from);
@@ -27,8 +28,10 @@ public class EmailService {
             message.setSubject(subject);
             message.setText(body);
             mailSender.send(message);
+            return true;
         } catch (Exception e) {
             log.error("Gửi email thất bại tới {} (subject: {})", to, subject, e);
+            return false;
         }
     }
 }

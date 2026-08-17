@@ -56,7 +56,6 @@ public class AppointmentService {
     private final WorkScheduleRepository workScheduleRepository;
     private final ClinicSettingsRepository clinicSettingsRepository;
     private final AppointmentMapper appointmentMapper;
-    private final EmailService emailService;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final Clock clock;
 
@@ -137,10 +136,6 @@ public class AppointmentService {
                 .build();
 
         Appointment saved = appointmentRepository.save(appt);
-        emailService.send(patient.getUser().getEmail(), "Xác nhận đặt lịch hẹn",
-                "Bạn đã đặt lịch hẹn thành công với " + dentist.getFullName()
-                        + " (" + service.getName() + ") vào lúc " + req.getStartTime()
-                        + " ngày " + req.getAppointmentDate() + ".");
         publishEvent(KafkaTopics.APPOINTMENT_BOOKED, saved.getId().toString(),
                 AppointmentBookedPayload.builder()
                         .appointmentId(saved.getId())
@@ -173,9 +168,6 @@ public class AppointmentService {
 
         appt.setStatus(AppointmentStatus.CANCELLED);
         Appointment saved = appointmentRepository.save(appt);
-        emailService.send(appt.getPatient().getUser().getEmail(), "Huỷ lịch hẹn",
-                "Lịch hẹn với " + appt.getDentist().getFullName() + " vào lúc " + appt.getStartTime()
-                        + " ngày " + appt.getAppointmentDate() + " đã được huỷ.");
         publishEvent(KafkaTopics.APPOINTMENT_CANCELLED, saved.getId().toString(),
                 AppointmentCancelledPayload.builder()
                         .appointmentId(saved.getId())

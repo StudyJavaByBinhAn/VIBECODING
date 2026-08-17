@@ -4,6 +4,7 @@ import com.vibecode.antijob.dto.ChangePasswordRequest;
 import com.vibecode.antijob.entity.User;
 import com.vibecode.antijob.enums.Role;
 import com.vibecode.antijob.event.DomainEvent;
+import com.vibecode.antijob.event.KafkaTopics;
 import com.vibecode.antijob.repository.DentistRepository;
 import com.vibecode.antijob.repository.PatientRepository;
 import com.vibecode.antijob.repository.UserRepository;
@@ -51,8 +52,6 @@ class AuthServiceTest {
     @Mock
     private JwtUtil jwtUtil;
     @Mock
-    private EmailService emailService;
-    @Mock
     private TokenRevocationService tokenRevocationService;
     @Mock
     private KafkaTemplate<String, Object> kafkaTemplate;
@@ -64,7 +63,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(userRepository, patientRepository, dentistRepository, passwordEncoder, jwtUtil,
-                emailService, tokenRevocationService, kafkaTemplate, FIXED_CLOCK);
+                tokenRevocationService, kafkaTemplate, FIXED_CLOCK);
         user = User.builder().id(1L).email(EMAIL).password("hashed-old").role(Role.PATIENT).build();
     }
 
@@ -124,7 +123,7 @@ class AuthServiceTest {
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getResetToken()).isNotBlank();
         assertThat(captor.getValue().getResetTokenExpiry()).isEqualTo(NOW.plusMinutes(30));
-        verify(emailService).send(eq(EMAIL), anyString(), anyString());
+        verify(kafkaTemplate).send(eq(KafkaTopics.AUTH_PASSWORD_RESET_REQUESTED), eq(EMAIL), any());
     }
 
     @Test
@@ -134,7 +133,7 @@ class AuthServiceTest {
         authService.forgotPassword("unknown@example.com");
 
         verify(userRepository, never()).save(any());
-        verify(emailService, never()).send(anyString(), anyString(), anyString());
+        verify(kafkaTemplate, never()).send(anyString(), anyString(), any());
     }
 
     // ---------- resetPassword() ----------

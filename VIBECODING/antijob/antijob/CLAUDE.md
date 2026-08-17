@@ -101,7 +101,7 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 - [Phase 15](#phase-15--jwt-logoutrevoke-hoàn-thành-2026-07-14) — JWT logout/revoke
 - [Phase 16](#phase-16--micrometerprometheus-hoàn-thành-2026-07-14-cùng-ngày-với-phase-15) — Micrometer/Prometheus
 - [Phase 17](#phase-17--sửa-3-bug-nghiệp-vụ-phát-hiện-qua-code-review-toàn-bộ-codebase-hoàn-thành-2026-07-15) — 3 bug nghiệp vụ từ code review
-- [Phase 18](#phase-18--tách-microservice-booking--email--customer-care-qua-kafka--đang-tiến-hành) — Tách microservice qua Kafka 🚧 **đang làm**
+- [Phase 18](#phase-18--tách-microservice-booking--email--customer-care-qua-kafka--đang-tiến-hành) — Tách microservice qua Kafka (Phase A+B xong) 🚧 **đang làm**
 - [Đánh giá "sẵn sàng sử dụng"](#đánh-giá-sẵn-sàng-sử-dụng-2026-07-14)
 - [Giới hạn đã biết](#giới-hạn-đã-biết-cố-tình-chưa-làm-không-chặn-dùng-được-chỉ-cần-biết-trước-khi-lên-production-thật)
 
@@ -476,7 +476,7 @@ Sau khi roadmap gốc xong (Phase 9-16), user yêu cầu review toàn bộ codeb
 
 ### Phase 18 — Tách microservice (Booking / Email / Customer-care) qua Kafka — 🚧 ĐANG TIẾN HÀNH
 
-**Trạng thái:** 🚧 Đang tiến hành — Phase A xong, Phase B/C/D chưa bắt đầu.
+**Trạng thái:** 🚧 Đang tiến hành — Phase A + B xong, Phase C/D chưa bắt đầu.
 
 Roadmap gốc (Phase 1-17) coi như đã xong hoàn toàn — không còn bug/checklist tồn đọng. User muốn bước tiếp theo là **học/thực hành microservices + Kafka để làm portfolio**, không phải nhu cầu sản xuất thật. Kế hoạch đầy đủ (đã duyệt qua Plan Mode) lưu tại `C:\Users\ADMIN\.claude\plans\linked-crunching-dahl.md` — tham khảo file đó để biết toàn bộ kiến trúc 3 service, quyết định đã chốt (chat model 1:N, MongoDB, Kafka cho cả 3 service, audit log email), và roadmap Phase A→D.
 
@@ -494,10 +494,29 @@ Roadmap gốc (Phase 1-17) coi như đã xong hoàn toàn — không còn bug/ch
   - **Fix**: set `KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR`/`KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR`/`KAFKA_TRANSACTION_STATE_LOG_MIN_ISR` đều = 1 trong docker-compose — bắt buộc cho mọi Kafka cluster dev 1-node, dễ bỏ sót vì producer-side không hề báo lỗi.
 - [x] **9. Docs**: `CLAUDE.md` (mục này), `CHANGELOG.md` (Phase 18 Phase A entry).
 
-**Chưa làm (Phase B/C/D — xem kế hoạch đầy đủ trong plan file):** email-service (project Gradle riêng, consume 4 topic, xoá `EmailService` khỏi booking-service), customer-care-service (WebSocket/STOMP chat + MongoDB + JWT verify copy-paste + publish `chat.message-sent`), orchestration/CI/docs đầy đủ cho cả 3 service.
-
 **Fix phát sinh sau Phase A (2026-08-06, lúc khởi động lại hệ thống để đọc code):** `GET /actuator/health` bị **treo vô thời hạn** — `MailHealthIndicator` (tự bật vì có `spring-boot-starter-mail`) mở kết nối SMTP thật tới MailHog mỗi lần gọi health check; lúc đó MailHog không phản hồi banner SMTP (xác nhận bằng `jcmd <pid> Thread.print`, thấy toàn bộ thread `http-nio-8080-exec-*` block ở `SMTPTransport.openServer`).
 - **Fix**: `management.health.mail.enabled: false` trong `application.yaml` — cùng triết lý với `EmailService` (gửi mail là side-effect, không được ảnh hưởng nghiệp vụ chính; áp dụng luôn cho health check, không để 1 SMTP relay chậm quyết định app có "khoẻ mạnh" hay không).
+
+#### Phase B — email-service tách riêng, xoá EmailService khỏi booking-service (Hoàn thành 2026-08-17)
+
+- [x] **1. `antijob/email-service/`** — project Gradle độc lập hoàn toàn (gradlew/settings.gradle/build.gradle/Dockerfile riêng, package `com.vibecode.emailservice`). Dependency: `spring-boot-starter-webmvc` (cho `/actuator/health`), `spring-boot-starter-actuator`, `spring-boot-starter-data-jpa`, `spring-boot-starter-mail`, `spring-kafka`, `postgresql` + Flyway. Cố tình KHÔNG thêm jacoco/spotbugs ở phase này (CI polish là việc của Phase D, tránh gold-plating ngoài phạm vi đã chốt).
+- [x] **2. `config/KafkaConsumerConfig.java`** — tự khai báo `ConsumerFactory<String,String>`/`ConcurrentKafkaListenerContainerFactory` (Boot 4.1 không autoconfigure Kafka, đúng phát hiện đã có ở Phase A cho phía producer). Value deserializer dùng `StringDeserializer` thô, KHÔNG `JacksonJsonDeserializer` theo type cụ thể — mỗi topic có payload khác nhau và service này cố tình không share jar `DomainEvent<T>` với producer (đúng quyết định kiến trúc ở plan file).
+- [x] **3. `event/`** — bản sao riêng của `KafkaTopics` + 3 payload DTO (khớp JSON booking-service publish, tự sở hữu, không import ngược từ booking-service).
+- [x] **4. `listener/EmailEventListener.java`** — 3 `@KafkaListener`, mỗi cái `objectMapper.readTree(message)` rồi `treeToValue(root.get("data"), PayloadType.class)` để lấy đúng payload (vì `DomainEvent<T>` generic không deserialize thẳng bằng type token đơn giản được — cách này đơn giản hơn nhiều so với vật lộn `TypeReference` cho 3 payload khác nhau trên 3 topic khác nhau). Tự dựng lại nguyên văn 3 template tiếng Việt port từ `AppointmentService.book()/cancel()` và `AuthService.forgotPassword()` bên booking-service.
+- [x] **5. `entity/SentEmail.java` + `V1__create_sent_emails.sql`** — audit log mỗi lần xử lý event, có cột `status` (`SENT`/`FAILED`). `EmailSenderService.send()` trả về `boolean` (khác `EmailService` cũ bên booking-service nuốt hẳn exception) — vì gửi mail giờ LÀ nghiệp vụ chính của service này, listener cần biết kết quả để ghi đúng status.
+- [x] **6. Database riêng `email_service_db`** — cùng Postgres instance với booking-service (`dental-db`), không share schema. `docker-compose.yml` (booking-service) thêm bind-mount `docker/postgres-init/01-create-email-service-db.sql` để tự tạo DB này ở lần khởi tạo volume Postgres mới.
+  - **Gotcha**: volume `dental-db-data` hiện có đã có data từ trước (không phải lần init đầu) nên script mới thêm không tự chạy — phải `docker exec dental-db psql -U postgres -c "CREATE DATABASE email_service_db;"` thủ công 1 lần; script vẫn có ích cho môi trường mới/CI sau này.
+- [x] **7. Xoá `EmailService` khỏi booking-service** — xoá `EmailService.java`/`EmailServiceTest.java`; xoá field + lời gọi `emailService.send(...)` khỏi `AppointmentService.book()/cancel()` và `AuthService.forgotPassword()` (giữ nguyên phần publish Kafka, đúng ranh giới additive→thay thế của Phase A→B). Xoá `spring-boot-starter-mail` khỏi `build.gradle`; xoá `spring.mail.*`/`mail.from`/`management.health.mail.enabled` khỏi `application.yaml` (không còn ý nghĩa vì không còn mail starter trên classpath). `.env.example` bỏ `MAIL_*`, thêm `KAFKA_BOOTSTRAP_SERVERS`.
+- [x] **8. Test cập nhật**: `AppointmentServiceTest`/`AuthServiceTest` bỏ mock `EmailService`, đổi verify sang `kafkaTemplate.send(...)`. `email-service` có `EmailSenderServiceTest` (2 test, port từ `EmailServiceTest` cũ) + `EmailEventListenerTest` (3 test: parse payload đúng, ghi audit đúng status SENT/FAILED, tin `password-reset` chứa đúng token trong body).
+- [x] **9. Verify thật đầy đủ, cả 2 project** — `./gradlew build` booking-service: full suite + Jacoco + SpotBugs sạch. `./gradlew build` email-service: 5 test Mockito pass. Full stack thật: `docker compose up -d` (5 container) + `bootRun` cả 2 service + curl thật:
+  - `forgot-password` (admin) → Kafka → email-service log "status=SENT" → MailHog nhận đúng mail "Đặt lại mật khẩu" → `sent_emails` có dòng đúng.
+  - `book` + `cancel` (patient mới tạo) → 2 topic còn lại đều tới đúng → MailHog tổng 3 mail đúng người nhận/subject (UTF-8 encode đúng) → `sent_emails` có đủ 3 dòng, đều `status=SENT`.
+  - Regression: `GET /api/appointments` không token vẫn 403, `/v3/api-docs` vẫn 200, `./gradlew dependencies --configuration runtimeClasspath` xác nhận booking-service không còn `spring-boot-starter-mail`.
+- [x] **10. Docs**: `CLAUDE.md` (mục này), `worklog/2026-08-17-kafka-phase-b-email-service.md`.
+
+**Gotcha môi trường phát hiện đầu phiên này**: toàn bộ 5 container (`dental-db`/`dental-redis`/`dental-kafka`/`dental-kafka-ui`/`dental-mailhog`) và cả 2 process Java đã dừng (máy tắt/Docker Desktop restart, không rõ nguyên nhân cụ thể) — phải `docker compose up -d` + `bootRun` lại từ đầu trước khi verify được gì. Không phải bug, chỉ là trạng thái ban đầu của phiên làm việc.
+
+**Chưa làm (Phase C/D — xem kế hoạch đầy đủ trong plan file)**: customer-care-service (WebSocket/STOMP chat + MongoDB + JWT verify copy-paste + publish `chat.message-sent`); orchestration/CI/docs đầy đủ cho cả 3 service (bao gồm thêm `email-service` vào docker-compose root như 1 service container thật — hiện mới chạy tay qua `bootRun`, chưa có Dockerfile được build/test trong CI).
 
 ---
 
