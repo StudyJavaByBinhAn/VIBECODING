@@ -71,6 +71,15 @@ management:
   endpoint:
     health:
       show-details: never
+  # MailHealthIndicator tự bật khi có spring-boot-starter-mail (mở kết nối SMTP thật để test mỗi
+  # lần gọi /actuator/health) — nếu SMTP relay/MailHog chậm hoặc treo, cả health check bị treo
+  # theo (gặp thật lúc verify: MailHog không phản hồi banner, mọi thread http-nio bị block chờ
+  # SMTP). Gửi email vốn đã là side-effect không được làm fail nghiệp vụ chính (xem EmailService)
+  # — áp dụng cùng triết lý đó cho health check: tắt hẳn, không để 1 SMTP relay chậm quyết định
+  # trạng thái "khoẻ mạnh" của app.
+  health:
+    mail:
+      enabled: false
   metrics:
     tags:
       application: antijob

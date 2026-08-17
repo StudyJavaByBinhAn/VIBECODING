@@ -4,14 +4,14 @@
 
 ## Project
 
-- **Stack:** Java 21 · Spring Boot 4.1.0 · Gradle · Lombok · JPA · PostgreSQL · Flyway · Redis · Spring Security · JWT · MapStruct
+- **Stack:** Java 21 · Spring Boot 4.1.0 · Gradle · Lombok · JPA · PostgreSQL · Flyway · Redis · Spring Security · JWT · MapStruct · Kafka (KRaft)
 - **Package:** `com.vibecode.antijob`
 - **Mô tả:** REST API đặt lịch hẹn nha khoa — bệnh nhân đặt lịch, chọn bác sĩ, admin quản lý
 
 ## Structure
 
 ```
-entity/    enums/    dto/    mapper/    service/    controller/    exception/    config/
+entity/    enums/    dto/    mapper/    service/    controller/    exception/    config/    security/    event/
 ```
 
 Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java` (đặt/huỷ lịch)
@@ -80,7 +80,37 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 
 ## Progress Tracking
 
-**Phase 1 — Đã hoàn thành (trước 2026-07-02):**
+**Mục lục nhanh** — mỗi phase là 1 heading `###`, nhảy tới bằng link dưới đây:
+
+- [Phase 1](#phase-1--đã-hoàn-thành-trước-2026-07-02) — Khởi tạo project (POJO, in-memory)
+- [Phase 2](#phase-2--hoàn-thành-2026-07-02-db-tích-hợp) — Tích hợp DB (JPA + Postgres + Flyway)
+- [Phase 3](#phase-3--hoàn-thành-2026-07-02-spring-security--jwt) — Spring Security + JWT
+- [Phase 4](#phase-4--hoàn-thành-2026-07-04) — Đăng ký staff, Flyway fix, Redis cache
+- [Phase 5](#phase-5--hoàn-thành-2026-07-07) — Ownership authorization, Redis serializer v2, active toggle
+- [Việc phát sinh — MapStruct](#việc-phát-sinh--migrate-sang-mapstruct-2026-07-07-trước-khi-bắt-đầu-phase-6)
+- [Phase 6](#phase-6--hoàn-thành-2026-07-07-1) — Business rules đầy đủ (buffer/break/auto-assign)
+- [Phase 7](#phase-7--hoàn-thành-2026-07-08) — Validation DTO, pagination, dọn docs
+- [Việc phát sinh — Docs + Swagger](#việc-phát-sinh--project-hygiene-docs--swagger-2026-07-08-cùng-ngày-sau-phase-7)
+- [Phase 8](#phase-8--infra-hygiene-hoàn-thành-2026-07-09) — Docker Compose, env-var hoá, CI
+- [Phase 9](#phase-9--security-hardening-hoàn-thành-2026-07-11) — Security hardening (CORS, rate limit, fail-fast)
+- [Phase 10](#phase-10--vòng-đời-appointment--receptionist-hoàn-thành-2026-07-11) — Vòng đời appointment + RECEPTIONIST
+- [Phase 11](#phase-11--admin-crud-config--profile-self-service-hoàn-thành-2026-07-12) — Admin CRUD config + profile self-service
+- [Phase 12](#phase-12--test-coverage-tự-động-hoàn-thành-2026-07-13) — Test coverage tự động (controller/repo/security)
+- [Phase 13](#phase-13--observabilityops-hoàn-thành-2026-07-13-cùng-ngày-với-phase-12) — Observability/ops (health, correlation-id)
+- [Phase 14](#phase-14--notification--static-analysis--ci-polish-hoàn-thành-2026-07-13-cùng-ngày-với-phase-12-13) — Email thật (MailHog) + SpotBugs
+- [Phase 15](#phase-15--jwt-logoutrevoke-hoàn-thành-2026-07-14) — JWT logout/revoke
+- [Phase 16](#phase-16--micrometerprometheus-hoàn-thành-2026-07-14-cùng-ngày-với-phase-15) — Micrometer/Prometheus
+- [Phase 17](#phase-17--sửa-3-bug-nghiệp-vụ-phát-hiện-qua-code-review-toàn-bộ-codebase-hoàn-thành-2026-07-15) — 3 bug nghiệp vụ từ code review
+- [Phase 18](#phase-18--tách-microservice-booking--email--customer-care-qua-kafka--đang-tiến-hành) — Tách microservice qua Kafka 🚧 **đang làm**
+- [Đánh giá "sẵn sàng sử dụng"](#đánh-giá-sẵn-sàng-sử-dụng-2026-07-14)
+- [Giới hạn đã biết](#giới-hạn-đã-biết-cố-tình-chưa-làm-không-chặn-dùng-được-chỉ-cần-biết-trước-khi-lên-production-thật)
+
+---
+
+### Phase 1 — Đã hoàn thành (trước 2026-07-02)
+
+**Trạng thái:** ✅ Hoàn thành
+
 - Khởi tạo project Spring Boot Gradle (`AntijobApplication.java`).
 - Thiết kế entity POJO: User, Patient, Dentist, DentalService, WorkSchedule, Appointment, ClinicSettings.
 - Enums: Role, AppointmentStatus, Gender.
@@ -89,7 +119,12 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 - SlotService + AppointmentService (in-memory, không DB).
 - AppointmentController với các endpoint cơ bản.
 
-**Phase 2 — Hoàn thành 2026-07-02 (DB tích hợp):**
+---
+
+### Phase 2 — Hoàn thành 2026-07-02 (DB tích hợp)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-02
+
 - Thêm dependency JPA, PostgreSQL, Flyway, Lombok vào `build.gradle`.
 - Chuyển toàn bộ POJO entity → JPA Entity (`@Entity`, `@Table`, `@Id`, `@Column`, `FetchType.LAZY`).
 - Tạo 6 JPA Repositories: Appointment, Patient, Dentist, DentalService, WorkSchedule, ClinicSettings.
@@ -99,9 +134,15 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 - Tạo `DataInitializer` seed data tự động khi app khởi động lần đầu.
 - Tạo `V1__init_schema.sql` migration file (tất cả tables + indexes + seed data).
 - App chạy thực tế: API trả data từ PostgreSQL 16, endpoint `/api/appointments` và `/api/slots` hoạt động.
-- ⚠️ Flyway chưa tự động chạy với Spring Boot 4.1.0 (cần điều tra thêm — tạm dùng DataInitializer).
 
-**Phase 3 — Hoàn thành 2026-07-02 (Spring Security + JWT):**
+**Gotcha:** ⚠️ Flyway chưa tự động chạy với Spring Boot 4.1.0 (cần điều tra thêm — tạm dùng DataInitializer). *(Root cause tìm ra ở Phase 4.)*
+
+---
+
+### Phase 3 — Hoàn thành 2026-07-02 (Spring Security + JWT)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-02
+
 - [x] Thêm dependency: `spring-boot-starter-security`, `jjwt-api/impl/jackson:0.12.6` vào `build.gradle`.
 - [x] `SecurityConfig`: permit `/api/auth/**`, bảo vệ tất cả routes còn lại, stateless session, `@EnableMethodSecurity`.
 - [x] `JwtUtil`: generate token (email + role + expiry), validate, extract claims (jjwt 0.12 API).
@@ -113,50 +154,70 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 - [x] `BCryptPasswordEncoder` bean trong SecurityConfig.
 - [x] Phân quyền trên controller: `@PreAuthorize("hasRole('PATIENT')")` cho book, `hasRole('ADMIN')` cho xem tất cả (`GET /api/appointments`).
 - [x] `GlobalExceptionHandler`: thêm handler `AccessDeniedException` → 403 (trước đó bị handler `RuntimeException` bắt nhầm → 500).
-- Đã test thực tế qua curl: register/login trả JWT hợp lệ, PATIENT bị 403 ở endpoint ADMIN-only, book thành công.
 
-**Phase 4 — Hoàn thành 2026-07-04:**
+**Verify:** Đã test thực tế qua curl: register/login trả JWT hợp lệ, PATIENT bị 403 ở endpoint ADMIN-only, book thành công.
+
+---
+
+### Phase 4 — Hoàn thành 2026-07-04
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-04
+
 - [x] Endpoint book lấy `patientId` từ JWT principal (`Authentication.getName()` → `PatientRepository.findByUserEmail`) thay vì nhận trực tiếp từ request body. `AppointmentRequest.patientId` đã bị xoá khỏi DTO.
 - [x] Đăng ký cho DENTIST/ADMIN/RECEPTIONIST: `POST /api/auth/register-staff` (chỉ ADMIN gọi được, `@PreAuthorize("hasRole('ADMIN')")`), DTO `RegisterStaffRequest`. `/api/auth/register` công khai vẫn chỉ tạo PATIENT (đúng chủ đích, không cho public tự tạo ADMIN).
   - `DataInitializer` seed sẵn 1 tài khoản ADMIN bootstrap: `admin@vibecode.local` / `admin123` — **đổi mật khẩu này trước khi lên prod.**
-- [x] **Flyway root cause tìm ra:** Spring Boot 4 tách `FlywayAutoConfiguration` ra module riêng `org.springframework.boot:spring-boot-flyway` — chỉ có `flyway-core`/`flyway-database-postgresql` trên classpath (như trước) KHÔNG đủ để autoconfig kích hoạt. Đã thêm dependency thiếu + `baseline-on-migrate: true`, `baseline-version: 1` (vì DB đã có bảng tạo thủ công trước đó, không có `flyway_schema_history`). Verify: `flyway_schema_history` giờ có 1 row BASELINE.
+- [x] **Flyway root cause tìm ra** (khắc phục gotcha để lại từ Phase 2): Spring Boot 4 tách `FlywayAutoConfiguration` ra module riêng `org.springframework.boot:spring-boot-flyway` — chỉ có `flyway-core`/`flyway-database-postgresql` trên classpath (như trước) KHÔNG đủ để autoconfig kích hoạt.
+  - Fix: thêm dependency thiếu + `baseline-on-migrate: true`, `baseline-version: 1` (vì DB đã có bảng tạo thủ công trước đó, không có `flyway_schema_history`).
+  - Verify: `flyway_schema_history` giờ có 1 row BASELINE.
 - [x] Redis cache cho slots/dentists/services:
   - `spring-boot-starter-data-redis` + `spring-boot-starter-cache`, Redis chạy Docker (`dental-redis`, port 6379).
   - `CacheConfig`: `RedisCacheManagerBuilderCustomizer` (package đã đổi sang `org.springframework.boot.cache.autoconfigure` trong Boot 4), TTL riêng: `slots`=5 phút, `dentists-active`/`services-active`=1 giờ.
   - `GET /api/dentists`, `GET /api/services` (endpoint mới, không tồn tại trước đó — cần thiết để cache "dentists/services" có ý nghĩa) — cache `@Cacheable`.
   - `SlotService.getAvailableSlots` → `@Cacheable("slots")`; `AppointmentService.book/cancel` → `@CacheEvict("slots", allEntries=true)`.
-  - **Bug tìm & fix:** `GenericJackson2JsonRedisSerializer` mặc định dùng `ObjectMapper` không có `JavaTimeModule` → lỗi 500 khi serialize `List<LocalTime>`. Phải tự tạo `ObjectMapper` có `JavaTimeModule` + `activateDefaultTyping`. Ngoài ra Spring Boot 4 đổi JSON mặc định sang Jackson 3 (`tools.jackson`), nhưng `GenericJackson2JsonRedisSerializer` (spring-data-redis) vẫn dùng Jackson 2 cổ điển (`com.fasterxml.jackson`) — phải thêm `jackson-databind`/`jackson-datatype-jsr310` 2.x làm dependency riêng.
-- Đã verify thực tế qua curl: slots cache hit/evict đúng, dentists/services cache đúng, register-staff 403 khi không phải ADMIN, book dùng đúng patient từ JWT.
+  - **Bug tìm & fix:** `GenericJackson2JsonRedisSerializer` mặc định dùng `ObjectMapper` không có `JavaTimeModule` → lỗi 500 khi serialize `List<LocalTime>`. Phải tự tạo `ObjectMapper` có `JavaTimeModule` + `activateDefaultTyping`.
+  - Ngoài ra Spring Boot 4 đổi JSON mặc định sang Jackson 3 (`tools.jackson`), nhưng `GenericJackson2JsonRedisSerializer` (spring-data-redis) vẫn dùng Jackson 2 cổ điển (`com.fasterxml.jackson`) — phải thêm `jackson-databind`/`jackson-datatype-jsr310` 2.x làm dependency riêng. *(Serializer này được thay hẳn ở Phase 5.)*
 
-**Phase 5 — Đang làm (bắt đầu 2026-07-06):**
-- [x] Ownership authorization cho `GET /appointments/{id}` và `PATCH /appointments/{id}/cancel`:
+**Verify:** Đã verify thực tế qua curl: slots cache hit/evict đúng, dentists/services cache đúng, register-staff 403 khi không phải ADMIN, book dùng đúng patient từ JWT.
+
+---
+
+### Phase 5 — Hoàn thành 2026-07-07
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-07 — cả 3 mục đều xong, build + verify pass toàn bộ.
+
+- [x] **1. Ownership authorization** cho `GET /appointments/{id}` và `PATCH /appointments/{id}/cancel`:
   - `AppointmentService.assertCanAccess()`: ADMIN luôn được phép; PATIENT chỉ được phép trên lịch hẹn của chính mình (so khớp `Authentication.getName()` với `appointment.getPatient().getUser().getEmail()`); DENTIST được **xem** (không được huỷ) lịch hẹn được giao cho mình.
   - Không đủ quyền → ném `AccessDeniedException` → `GlobalExceptionHandler` trả 403 (tái dùng handler có sẵn từ Phase 3).
   - `findById`/`cancel` ở `AppointmentService` và `AppointmentController` đổi signature nhận thêm `Authentication`.
   - Test case: `src/test/http/features/appointment-ownership.http` (folder mới `features/` — mỗi tính năng từ đây có 1 file `.http` riêng, không dồn hết vào `appointments.http`).
-  - Verify qua curl thực tế: A xem/huỷ được lịch của A (200), B xem/huỷ lịch của A bị chặn (403), ADMIN xem được mọi lịch (200). Regression: `/appointments` ADMIN-only và không token vẫn đúng như cũ.
-  - **Lưu ý môi trường:** máy dev Windows này có dải port `7987-8086` bị OS reserve (`netsh interface ipv4 show excludedportrange protocol=tcp`) nên `server.port=8080` mặc định luôn bind fail — verify phải chạy tạm với `--args="--server.port=9090"`. Không phải bug code, nhưng cần nhớ khi verify lần sau trên máy này.
-- [x] Thay `GenericJackson2JsonRedisSerializer` (deprecated) → `GenericJacksonJsonRedisSerializer` (spring-data-redis 4.1.0, gói `org.springframework.data.redis.serializer`, dùng Jackson 3 `tools.jackson.databind.ObjectMapper` thay vì Jackson 2 cổ điển):
-  - `CacheConfig`: dùng `GenericJacksonJsonRedisSerializer.builder().enableUnsafeDefaultTyping().build()` — không cần tự tạo `ObjectMapper` + `JavaTimeModule` thủ công nữa vì Jackson 3 `jackson-databind` đã hỗ trợ `java.time` sẵn trong core (không cần module riêng như Jackson 2's `jackson-datatype-jsr310`).
-  - Xoá 2 dependency `com.fasterxml.jackson.core:jackson-databind:2.21.4` và `com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.21.4` khỏi `build.gradle` — chỉ tồn tại vì serializer cũ, không còn cần thiết (Jackson 2.x vẫn có mặt gián tiếp qua `jjwt-jackson`, không do project khai báo nữa).
-  - Verify qua curl: `/slots` (chứa `List<LocalTime>`), `/dentists`, `/services` — cache miss lần đầu, cache hit lần 2 trả đúng dữ liệu; `docker exec dental-redis redis-cli KEYS '*'` xác nhận đúng 3 key (`slots::`, `dentists-active::all`, `services-active::all`); log không còn lỗi serialize.
-- [x] Endpoint ADMIN cập nhật `active` cho Dentist/DentalService (quyết định: nên có — nếu không thì dentist/service nghỉ việc vẫn hiện trong danh sách active vô thời hạn):
+  - **Verify:** curl thực tế: A xem/huỷ được lịch của A (200), B xem/huỷ lịch của A bị chặn (403), ADMIN xem được mọi lịch (200). Regression: `/appointments` ADMIN-only và không token vẫn đúng như cũ.
+  - **Gotcha môi trường:** máy dev Windows này có dải port `7987-8086` bị OS reserve (`netsh interface ipv4 show excludedportrange protocol=tcp`) nên `server.port=8080` mặc định luôn bind fail — verify phải chạy tạm với `--args="--server.port=9090"`. Không phải bug code, nhưng cần nhớ khi verify lần sau trên máy này.
+- [x] **2. Thay serializer Redis (deprecated → mới):** `GenericJackson2JsonRedisSerializer` → `GenericJacksonJsonRedisSerializer` (spring-data-redis 4.1.0, gói `org.springframework.data.redis.serializer`, dùng Jackson 3 `tools.jackson.databind.ObjectMapper` thay vì Jackson 2 cổ điển):
+  - `CacheConfig`: dùng `GenericJacksonJsonRedisSerializer.builder().enableUnsafeDefaultTyping().build()` — không cần tự tạo `ObjectMapper` + `JavaTimeModule` thủ công nữa vì Jackson 3 `jackson-databind` đã hỗ trợ `java.time` sẵn trong core.
+  - Xoá 2 dependency `com.fasterxml.jackson.core:jackson-databind:2.21.4` và `com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.21.4` khỏi `build.gradle` — chỉ tồn tại vì serializer cũ, không còn cần thiết.
+  - **Verify:** curl `/slots` (chứa `List<LocalTime>`), `/dentists`, `/services` — cache miss lần đầu, cache hit lần 2 trả đúng dữ liệu; `docker exec dental-redis redis-cli KEYS '*'` xác nhận đúng 3 key (`slots::`, `dentists-active::all`, `services-active::all`); log không còn lỗi serialize.
+- [x] **3. Endpoint ADMIN cập nhật `active`** cho Dentist/DentalService (quyết định: nên có — nếu không thì dentist/service nghỉ việc vẫn hiện trong danh sách active vô thời hạn):
   - `PATCH /api/dentists/{id}/active` và `PATCH /api/services/{id}/active`, body `{"active": true|false}`, `@PreAuthorize("hasRole('ADMIN')")`.
   - DTO dùng chung `UpdateActiveRequest` (chỉ 1 field `active`) cho cả 2 endpoint.
   - `DentistService.updateActive` / `DentalServiceCatalogService.updateActive`: `@CacheEvict(allEntries = true)` đúng cache tương ứng (`dentists-active` / `services-active`) sau khi save — bắt buộc vì key cache cố định `'all'`.
-  - Verify qua curl: PATIENT gọi bị 403; ADMIN tắt active → dentist/service biến mất khỏi list ngay (cache evict đúng, không stale); bật lại → xuất hiện lại; id không tồn tại → 400.
+  - **Verify:** curl: PATIENT gọi bị 403; ADMIN tắt active → dentist/service biến mất khỏi list ngay (cache evict đúng, không stale); bật lại → xuất hiện lại; id không tồn tại → 400.
 
-**Phase 5 hoàn thành 2026-07-07.** Cả 3 mục đều đã xong, build + verify pass toàn bộ.
+---
 
-**Việc phát sinh — Migrate sang MapStruct (2026-07-07, trước khi bắt đầu Phase 6):**
+### Việc phát sinh — Migrate sang MapStruct (2026-07-07, trước khi bắt đầu Phase 6)
+
 - [x] Thêm dependency: `org.mapstruct:mapstruct:1.6.3` (implementation), `mapstruct-processor:1.6.3` (annotationProcessor), `lombok-mapstruct-binding:0.2.0` (annotationProcessor — bắt buộc để MapStruct processor thấy được getter Lombok sinh ra trong cùng vòng compile, thiếu dòng này sẽ lỗi biên dịch mapper).
 - [x] Package mới `mapper/`: `AppointmentMapper` (dùng `@Mapping(target=..., source=...)` cho 3 field flatten từ nested entity: `patientName`←`patient.fullName`, `dentistName`←`dentist.fullName`, `serviceName`←`service.name`; các field còn lại tên khớp trực tiếp nên MapStruct tự map không cần khai báo), `DentistMapper`, `DentalServiceMapper` (2 mapper sau field khớp tên hoàn toàn, không cần `@Mapping`).
 - [x] Xoá 3 method `toResponse()` thủ công (`AppointmentService`, `DentistService`, `DentalServiceCatalogService`), inject mapper qua constructor thay thế.
 - [x] `AuthService` **không đổi** — build `AuthResponse` từ token/role, không phải map trực tiếp 1 entity, không phù hợp MapStruct.
-- [x] Verify: `./gradlew build` pass (mapper impl sinh đúng tại `build/generated/sources/annotationProcessor/java/main/com/vibecode/antijob/mapper/`), curl `/api/appointments`, `/api/dentists`, `/api/services` xác nhận JSON response giữ nguyên hình dạng như trước migrate.
+- [x] **Verify:** `./gradlew build` pass (mapper impl sinh đúng tại `build/generated/sources/annotationProcessor/java/main/com/vibecode/antijob/mapper/`), curl `/api/appointments`, `/api/dentists`, `/api/services` xác nhận JSON response giữ nguyên hình dạng như trước migrate.
 - [x] Cập nhật `rules/02-coding-conventions.md` (dòng về DTO mapping) + Stack/Structure ở đầu file này.
 
-**Phase 6 — Hoàn thành 2026-07-07:**
+---
+
+### Phase 6 — Hoàn thành 2026-07-07
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-07
 
 Đóng toàn bộ khoảng cách giữa `rules/03-domain-rules.md`/`04-dos-and-donts.md` và code thực tế. Default values các config mới đã chốt trực tiếp với user: `buffer_minutes=10`, `break_start/end=12:00/13:00`, `cancel_before_hours=12`, `max_pending_appointments=3`; `close_time` giữ nguyên giá trị seed sẵn `17:00`.
 
@@ -178,25 +239,39 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
   - `AppointmentServiceTest` (15 test, Mockito): happy path, conflict, ngày quá khứ, break window, sau close_time, max-pending đạt ngưỡng, dentist tường minh inactive, auto-assign 1/nhiều/0 candidate (tie-break đúng), settings rỗng, cancel đủ sớm/trong hạn/status sai/ownership.
 - [x] **5. Test case `.http` mới trong `features/`**: `slot-buffer-break-close-time.http`, `appointment-cancel-deadline.http`, `appointment-max-pending.http`, `appointment-auto-assign.http`, `appointment-invalid-window.http`.
 - [x] **6. Đồng bộ docs** — `rules/03-domain-rules.md` cập nhật bảng Business Rules + ghi chú "đã implement Phase 6"; `CLAUDE.md` Entity Design table thêm 5 field `ClinicSettings` mới.
-- [x] **7. Verify toàn bộ** — `./gradlew build` pass với 25 unit test mới (`SlotServiceTest` 10, `AppointmentServiceTest` 15) + `contextLoads()`. `bootRun --args="--server.port=9090"` + curl thực tế xác nhận đúng: V2 migration tự chạy sạch trên DB đã baseline; buffer/break đúng slot bị loại (kể cả với data thật có sẵn appointment cũ); ngày quá khứ/giờ nghỉ trưa/sau đóng cửa đều 400 đúng message; max-pending 400 ở lịch PENDING thứ 4; huỷ trong vòng 12h thực (so với giờ hệ thống thật) bị 400, huỷ đủ sớm 200; auto-assign chọn đúng dentist ít lịch hơn (BS B thay vì BS A đang bận). Log không có lỗi ngoài dự kiến.
+- [x] **7. Verify toàn bộ** — `./gradlew build` pass với 25 unit test mới (`SlotServiceTest` 10, `AppointmentServiceTest` 15) + `contextLoads()`.
+  - `bootRun --args="--server.port=9090"` + curl thực tế xác nhận đúng: V2 migration tự chạy sạch trên DB đã baseline; buffer/break đúng slot bị loại (kể cả với data thật có sẵn appointment cũ); ngày quá khứ/giờ nghỉ trưa/sau đóng cửa đều 400 đúng message; max-pending 400 ở lịch PENDING thứ 4; huỷ trong vòng 12h thực (so với giờ hệ thống thật) bị 400, huỷ đủ sớm 200; auto-assign chọn đúng dentist ít lịch hơn (BS B thay vì BS A đang bận). Log không có lỗi ngoài dự kiến.
 
-**Phase 7 — Hoàn thành 2026-07-08:**
+---
+
+### Phase 7 — Hoàn thành 2026-07-08
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-08
 
 Khảo sát lại toàn bộ project (không có kế hoạch sẵn) phát hiện 3 gap thật, user chọn làm cả 3: validation tầng DTO, pagination, dọn docs lỗi thời.
 
 - [x] **1. Validation tầng DTO** — thêm `spring-boot-starter-validation` (chưa từng có trong project dù `rules/01-project-context.md` ghi sai là đã có). Annotate `jakarta.validation.constraints.*` lên `AppointmentRequest` (`serviceId`/`appointmentDate`/`startTime` `@NotNull`, `notes` `@Size(max=500)`, `dentistId` cố tình KHÔNG `@NotNull` vì null = auto-assign), `RegisterRequest`/`RegisterStaffRequest` (`email` `@NotBlank @Email`, `password` `@NotBlank @Size(min=6)`, `fullName`/`phone` `@NotBlank`, `role` `@NotNull` ở staff), `LoginRequest` (`email`/`password` `@NotBlank`, cố tình KHÔNG `@Email` — tránh lộ thông tin phân biệt "sai định dạng" vs "sai mật khẩu"). `@Valid` thêm vào mọi `@RequestBody` ở `AppointmentController`/`AuthController`/`DentistController`/`DentalServiceController`. `GlobalExceptionHandler` thêm handler `MethodArgumentNotValidException` → 400, gộp lỗi nhiều field thành 1 message nối `"; "` (không thêm field `errors` mới vào `ApiResponse`, giữ nguyên cấu trúc response cũ).
-- [x] **2. Pagination cho `GET /api/appointments`** — DTO mới `PageResponse<T>` (`content`/`page`/`size`/`totalElements`/`totalPages`). `AppointmentService.findAll(Pageable)` dùng `appointmentRepository.findAll(pageable)` có sẵn từ `JpaRepository` (không cần method repository mới). Controller nhận `@PageableDefault(size=20, sort="appointmentDate", direction=DESC)`. **Quyết định:** CHỈ áp dụng cho `/api/appointments` (bảng phình to theo thời gian) — KHÔNG áp dụng cho `/api/dentists`/`/api/services` (danh sách nhỏ, bị chặn quy mô, đang cache key cố định `'all'`, thêm pagination phá cache mà không giải quyết rủi ro thật). Breaking change response shape (`List<T>` → `PageResponse<T>`) — đã cập nhật `appointments.http` cho khớp.
+- [x] **2. Pagination cho `GET /api/appointments`** — DTO mới `PageResponse<T>` (`content`/`page`/`size`/`totalElements`/`totalPages`). `AppointmentService.findAll(Pageable)` dùng `appointmentRepository.findAll(pageable)` có sẵn từ `JpaRepository` (không cần method repository mới). Controller nhận `@PageableDefault(size=20, sort="appointmentDate", direction=DESC)`.
+  - **Quyết định:** CHỈ áp dụng cho `/api/appointments` (bảng phình to theo thời gian) — KHÔNG áp dụng cho `/api/dentists`/`/api/services` (danh sách nhỏ, bị chặn quy mô, đang cache key cố định `'all'`, thêm pagination phá cache mà không giải quyết rủi ro thật). Breaking change response shape (`List<T>` → `PageResponse<T>`) — đã cập nhật `appointments.http` cho khớp.
 - [x] **3. Dọn docs** — `rules/02-coding-conventions.md`: sửa ví dụ DTO (record→class thật có validation), bảng exception (3 class ảo `ResourceNotFoundException`/`SlotAlreadyBookedException`/`InvalidAppointmentException` → vocabulary thật `IllegalArgumentException`/`IllegalStateException`/`AccessDeniedException`/`MethodArgumentNotValidException`/`RuntimeException`), section Caching (viết lại mô tả đúng Redis đã có từ Phase 4, không còn "chưa triển khai"), sửa luôn `ApiResponse` example (record sai → class thật, không có `timestamp`/`errors` field). `rules/01-project-context.md`: sửa dòng Mapping (MapStruct), thêm `mapper/` vào structure diagram, thêm `CacheConfig`/`TimeConfig` vào mô tả `config/`, thêm lệnh docker Redis.
 - [x] **4. Test case `.http` mới**: `features/dto-validation.http`, `features/appointment-pagination.http`.
-- [x] **5. Verify toàn bộ** — `./gradlew build` pass, 26/26 test (25 cũ + `contextLoads`). `bootRun --args="--server.port=9090 --spring.data.redis.port=17000"` + curl xác nhận: mọi case validation trả đúng 400 kèm message field; pagination page 0/1 trả đúng nội dung khác nhau, `totalElements`/`totalPages` đúng; regression book/register hợp lệ vẫn 200. **Gotcha môi trường mới:** máy dev này giờ còn bị Windows exclude cả dải port quanh `6316-6415` (chặn Redis mặc định `6379`) — dải exclude là **động**, đổi mỗi lần Docker Desktop/Hyper-V restart, khác hẳn dải `7987-8086` ghi nhận ở Phase 5. Không sửa `application.yaml`; verify lần này phải map Redis container sang port khác (`17000`) + override runtime bằng `--spring.data.redis.port=17000`, giống cách xử lý cho `server.port`. Từ nay mỗi lần verify trên máy này: `netsh interface ipv4 show excludedportrange protocol=tcp` để biết port nào đang bị chặn trước khi chạy `bootRun`/docker.
+- [x] **5. Verify toàn bộ** — `./gradlew build` pass, 26/26 test (25 cũ + `contextLoads`). `bootRun --args="--server.port=9090 --spring.data.redis.port=17000"` + curl xác nhận: mọi case validation trả đúng 400 kèm message field; pagination page 0/1 trả đúng nội dung khác nhau, `totalElements`/`totalPages` đúng; regression book/register hợp lệ vẫn 200.
+  - **Gotcha môi trường mới:** máy dev này giờ còn bị Windows exclude cả dải port quanh `6316-6415` (chặn Redis mặc định `6379`) — dải exclude là **động**, đổi mỗi lần Docker Desktop/Hyper-V restart, khác hẳn dải `7987-8086` ghi nhận ở Phase 5. Không sửa `application.yaml`; verify lần này phải map Redis container sang port khác (`17000`) + override runtime bằng `--spring.data.redis.port=17000`, giống cách xử lý cho `server.port`. Từ nay mỗi lần verify trên máy này: `netsh interface ipv4 show excludedportrange protocol=tcp` để biết port nào đang bị chặn trước khi chạy `bootRun`/docker.
 
-**Việc phát sinh — Project hygiene docs + Swagger (2026-07-08, cùng ngày, sau Phase 7):**
+---
+
+### Việc phát sinh — Project hygiene docs + Swagger (2026-07-08, cùng ngày, sau Phase 7)
+
 - [x] `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md` mới tại root `antijob/antijob/` (chưa từng có trước đó).
 - [x] Swagger UI: thêm `springdoc-openapi-starter-webmvc-ui:2.8.5` — tương thích tốt với Spring Boot 4.1.0 dù là bản mới nhất target Boot 3.x (không gặp vấn đề version-mismatch như Flyway/Redis serializer trước đây). `config/OpenApiConfig.java` khai báo metadata + security scheme `bearerAuth` (JWT) để nút Authorize trên Swagger UI hoạt động.
 - [x] `SecurityConfig`: thêm `permitAll()` cho `/swagger-ui/**`, `/swagger-ui.html`, `/v3/api-docs/**` — không đổi hành vi các route khác (đã verify `/api/appointments` không token vẫn 403 như cũ).
-- [x] Verify: `curl http://localhost:9090/v3/api-docs` trả đúng OpenAPI JSON với `security: [{"bearerAuth":[]}]`; `curl http://localhost:9090/swagger-ui/index.html` → 200.
+- [x] **Verify:** `curl http://localhost:9090/v3/api-docs` trả đúng OpenAPI JSON với `security: [{"bearerAuth":[]}]`; `curl http://localhost:9090/swagger-ui/index.html` → 200.
 
-**Phase 8 — Infra hygiene (Hoàn thành 2026-07-09):**
+---
+
+### Phase 8 — Infra hygiene (Hoàn thành 2026-07-09)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-09
 
 User chỉ ra 4 gap hạ tầng thật (đã verify đúng bằng cách đọc code trước khi làm): không có docker-compose, không có deployment script, `application.yaml` hardcode 100% (kể cả JWT secret), Flyway chưa được test trong CI vì không có pipeline nào.
 
@@ -207,7 +282,11 @@ User chỉ ra 4 gap hạ tầng thật (đã verify đúng bằng cách đọc c
 - [x] **5. Verify end-to-end thật** (không chỉ compile): `docker compose up -d` → 2 container healthy → `bootRun` không override gì (dùng default env) → login vẫn 200 (regression-free) → `./deploy.sh build` build image thành công → `./deploy.sh run --network antijob_default` với `.env` trỏ `DB_HOST=dental-db`/`REDIS_HOST=dental-redis` → container tự kết nối đúng qua Docker network DNS, login + Swagger UI qua port 8080 của container đều 200. Dọn container/`.env` test sau khi verify xong.
 - [x] **6. Docs**: README (docker-compose + full-Docker run instructions, bảng CI/CD), CONTRIBUTING (mục CI mới), CHANGELOG (Phase 8 entry).
 
-**Phase 9 — Security hardening (Hoàn thành 2026-07-11):**
+---
+
+### Phase 9 — Security hardening (Hoàn thành 2026-07-11)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-11
 
 3 agent khảo sát song song (business/security/test coverage) phát hiện nhiều gap thật khi đọc code trực tiếp. User chốt chỉ làm Phase 9 (bảo mật — duy nhất có rủi ro khai thác thật) đợt này, Phase 10-14 (vòng đời appointment/RECEPTIONIST, admin CRUD ClinicSettings/WorkSchedule, profile self-service, test coverage, observability, notification) để làm roadmap tham khảo sau — xem đầy đủ trong `C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-hinton.md`.
 
@@ -217,11 +296,16 @@ User chỉ ra 4 gap hạ tầng thật (đã verify đúng bằng cách đọc c
 - [x] **4. `GlobalExceptionHandler` không lộ chi tiết lỗi** — `handleRuntime` giờ `log.error(ex)` server-side (SLF4J, đã thêm `@Slf4j`) + trả message chung chung cho client thay vì `"Internal error: " + ex.getMessage()`.
 - [x] **5. CORS** — `CorsConfigurationSource` bean trong `SecurityConfig`, đọc `CORS_ALLOWED_ORIGINS` (comma-separated, rỗng mặc định = chặn hết). Verify thật: preflight OPTIONS từ origin được phép → 200 + đúng header; origin lạ → 403.
 - [x] **6. Rate limiting** — `security/RateLimitFilter.java` (`OncePerRequestFilter`, dùng `StringRedisTemplate` có sẵn, không thêm lib mới): tối đa 5 request/60s/IP cho `/api/auth/login` + `/api/auth/register`, vượt ngưỡng → 429 ngay tại filter. Verify thật: 5 lần đầu qua bình thường (400 do sai password), lần 6-7 → 429.
-- [x] **7. Gotcha filter ordering**: `addFilterBefore(rateLimitFilter, JwtAuthFilter.class)` **lỗi runtime** (`IllegalArgumentException` tại `HttpSecurity`) vì Spring Security chỉ chấp nhận anchor filter là well-known filter class đã có vị trí xác định, không phải filter custom khác chưa đăng ký. Fix: cả `rateLimitFilter` và `jwtAuthFilter` cùng anchor vào `UsernamePasswordAuthenticationFilter.class` (well-known filter) — bài học chung khi thêm filter custom mới vào chain sau này.
+- [x] **7. Gotcha filter ordering**: `addFilterBefore(rateLimitFilter, JwtAuthFilter.class)` **lỗi runtime** (`IllegalArgumentException` tại `HttpSecurity`) vì Spring Security chỉ chấp nhận anchor filter là well-known filter class đã có vị trí xác định, không phải filter custom khác chưa đăng ký.
+  - Fix: cả `rateLimitFilter` và `jwtAuthFilter` cùng anchor vào `UsernamePasswordAuthenticationFilter.class` (well-known filter) — bài học chung khi thêm filter custom mới vào chain sau này.
 - [x] **8. Verify toàn bộ**: `./gradlew build` 26/26 test pass; `bootRun` prod thiếu `JWT_SECRET` → fail to start đúng thiết kế; prod đủ env → start OK, `show-sql` tắt, admin seed đúng theo `ADMIN_PASSWORD`; regression register/login/Swagger/403 không đổi.
 - [x] **9. Docs**: `.env.example` (JWT_SECRET/ADMIN_EMAIL/ADMIN_PASSWORD/CORS_ALLOWED_ORIGINS/SPRING_PROFILES_ACTIVE), README (mục "Chạy production" mới), CHANGELOG (Phase 9 entry).
 
-**Phase 10 — Vòng đời appointment + RECEPTIONIST (Hoàn thành 2026-07-11):**
+---
+
+### Phase 10 — Vòng đời appointment + RECEPTIONIST (Hoàn thành 2026-07-11)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-11
 
 Trước phase này, `AppointmentStatus` có 5 giá trị nhưng chỉ 2 giá trị (`PENDING`/`CANCELLED`) đạt được qua API — `CONFIRMED`/`COMPLETED`/`NO_SHOW` không có endpoint nào set, và `RECEPTIONIST` là role rỗng hoàn toàn (đăng nhập được nhưng không làm được gì). User chốt phạm vi RECEPTIONIST trước đó (xem roadmap Phase 9): quyền gần bằng ADMIN trên appointment (xem tất cả + confirm/complete/no-show mọi lịch), không đụng user management.
 
@@ -231,12 +315,17 @@ Trước phase này, `AppointmentStatus` có 5 giá trị nhưng chỉ 2 giá tr
 - [x] **4. `GET /api/appointments`** đổi `@PreAuthorize` từ `hasRole('ADMIN')` → `hasRole('ADMIN') or hasRole('RECEPTIONIST')`.
 - [x] **5. Refactor nhỏ**: tách `getAppointmentOrThrow(id)` dùng chung cho `findById`/`cancel`/`confirm`/`complete`/`markNoShow` (trước đó lặp lại `findById().orElseThrow()` ở 2 chỗ, giờ 5 chỗ nên tách).
 - [x] **6. `AppointmentServiceTest`**: 12 test mới cho confirm/complete/markNoShow (theo role ADMIN/RECEPTIONIST/dentist-được-giao/dentist-không-được-giao/PATIENT, theo status hợp lệ/không hợp lệ) + 1 test `findById` xác nhận RECEPTIONIST xem được lịch không phải của mình.
-- [x] **7. Test `.http` mới**: `features/appointment-lifecycle.http` — full flow PENDING→CONFIRMED→COMPLETED qua confirm/complete, PENDING→NO_SHOW trực tiếp, phân quyền RECEPTIONIST/PATIENT trên cả action lẫn `GET /api/appointments`. **Lưu ý**: `RegisterStaffRequest.phone` là `@NotBlank` kể cả cho role RECEPTIONIST/ADMIN (không có entity hồ sơ dùng đến field này) — phải điền phone khi test `register-staff`, không phải bug mới của Phase 10.
+- [x] **7. Test `.http` mới**: `features/appointment-lifecycle.http` — full flow PENDING→CONFIRMED→COMPLETED qua confirm/complete, PENDING→NO_SHOW trực tiếp, phân quyền RECEPTIONIST/PATIENT trên cả action lẫn `GET /api/appointments`.
+  - **Lưu ý**: `RegisterStaffRequest.phone` là `@NotBlank` kể cả cho role RECEPTIONIST/ADMIN (không có entity hồ sơ dùng đến field này) — phải điền phone khi test `register-staff`, không phải bug mới của Phase 10.
 - [x] **8. Verify toàn bộ**: `./gradlew build` 37/37 test pass. `bootRun` (dev) + curl thực tế xác nhận đúng 10 kịch bản: PATIENT bị 403 khi tự confirm lịch của mình, RECEPTIONIST confirm/complete/no-show đúng transition, confirm/no-show sai trạng thái → 400 đúng message, RECEPTIONIST xem `GET /api/appointments` → 200, PATIENT bị 403. Regression: `cancel` endpoint cũ không đổi hành vi.
 
-**Phase 11 — Admin CRUD config + profile self-service (Hoàn thành 2026-07-12):**
+---
 
-Theo roadmap đã chốt ở `C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-hinton.md` (Phase 11). Quyết định đã chốt trước đó: **không tích hợp email thật** — quên mật khẩu dừng ở bước tạo token, không gửi mail.
+### Phase 11 — Admin CRUD config + profile self-service (Hoàn thành 2026-07-12)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-12
+
+Theo roadmap đã chốt ở `C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-hinton.md` (Phase 11). Quyết định đã chốt trước đó: **không tích hợp email thật** — quên mật khẩu dừng ở bước tạo token, không gửi mail. *(Email thật được nối vào ở Phase 14.)*
 
 - [x] **1. `ClinicSettings`**: `GET/PUT /api/clinic-settings` (ADMIN, `@PreAuthorize` ở class-level). `ClinicSettingsMapper` (MapStruct, chỉ `toResponse`) + `ClinicSettingsAdminService` (update dùng manual setter, giống pattern `updateActive` có sẵn — không dùng MapStruct `@MappingTarget` để nhất quán với style hiện tại). `update()` có `@CacheEvict("slots")` vì các field này (buffer/break/close time) ảnh hưởng trực tiếp `SlotService`.
 - [x] **2. `WorkSchedule`**: CRUD đầy đủ (`WorkScheduleController`, base `/api`, `@PreAuthorize` class-level ADMIN) — `GET/POST /api/dentists/{dentistId}/work-schedules`, `PUT/DELETE /api/work-schedules/{id}`. `WorkScheduleService` validate `startTime < endTime` trước khi chạm DB, và pre-check trùng `dayOfWeek` qua `findByDentistIdAndDayOfWeek` (dựa vào unique constraint `uq_schedule` có sẵn từ V1, nhưng check ở service để trả 400 sạch thay vì lộ constraint violation). `dayOfWeek` không sửa được qua `update()` (immutable sau khi tạo — muốn đổi ngày thì xoá tạo lại, tránh phải re-check uniqueness phức tạp).
@@ -251,16 +340,22 @@ Theo roadmap đã chốt ở `C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-pa
   - `SecurityConfig`: thêm `/api/auth/forgot-password`, `/api/auth/reset-password` vào `permitAll()`. `RateLimitFilter`: thêm `/api/auth/forgot-password` vào `LIMITED_PATHS` (chống dò email hàng loạt).
 - [x] **7. Unit test mới**: `AuthServiceTest` (7 test: changePassword đúng/sai mật khẩu, forgotPassword email tồn tại/không tồn tại, resetPassword token hợp lệ/hết hạn/không tồn tại), `WorkScheduleServiceTest` (9 test: create/update/delete happy path + validate thời gian + trùng ngày + not-found), `PatientServiceTest` (4 test), `DentistServiceTest` (3 test: update happy path/trùng license/not-found), `ClinicSettingsAdminServiceTest` (3 test).
 - [x] **8. Test `.http` mới**: `features/admin-clinic-config.http` (ClinicSettings + WorkSchedule CRUD + dentist/service full edit, kèm check 403 cho PATIENT), `features/patient-profile-and-password.http` (patient self-service + đổi/quên/đặt lại mật khẩu full flow).
-- [x] **9. Verify toàn bộ**: `./gradlew build` 64/64 test pass (migration V3 chạy sạch trên DB baseline sẵn có). `bootRun` (dev) + curl thực tế xác nhận đúng toàn bộ endpoint mới, bao gồm: reset-password full flow với token thật lấy từ log server (đặt lại mật khẩu thành công, token không tái sử dụng được sau khi dùng), đổi mật khẩu xong login bằng mật khẩu cũ bị 400/mật khẩu mới 200, license trùng bị 400 sạch (không phải 500), work-schedule trùng ngày bị 400. Regression: `GET /api/dentists`/`GET /api/services` vẫn hoạt động đúng và phản ánh field/data mới sau khi sửa qua endpoint mới, `GET /api/appointments` ADMIN/RECEPTIONIST-only không đổi, Swagger UI vẫn 200. **Lưu ý môi trường**: gặp lỗi 500 "Invalid UTF-8 middle byte" khi truyền tiếng Việt qua `curl -d` trực tiếp trong Git Bash — không phải bug code, do Bash tool không encode UTF-8 đúng khi truyền string qua `-d`; fix bằng cách ghi JSON ra file UTF-8 thật rồi dùng `curl --data-binary @file`.
+- [x] **9. Verify toàn bộ**: `./gradlew build` 64/64 test pass (migration V3 chạy sạch trên DB baseline sẵn có). `bootRun` (dev) + curl thực tế xác nhận đúng toàn bộ endpoint mới, bao gồm: reset-password full flow với token thật lấy từ log server (đặt lại mật khẩu thành công, token không tái sử dụng được sau khi dùng), đổi mật khẩu xong login bằng mật khẩu cũ bị 400/mật khẩu mới 200, license trùng bị 400 sạch (không phải 500), work-schedule trùng ngày bị 400. Regression: `GET /api/dentists`/`GET /api/services` vẫn hoạt động đúng và phản ánh field/data mới sau khi sửa qua endpoint mới, `GET /api/appointments` ADMIN/RECEPTIONIST-only không đổi, Swagger UI vẫn 200.
+  - **Lưu ý môi trường**: gặp lỗi 500 "Invalid UTF-8 middle byte" khi truyền tiếng Việt qua `curl -d` trực tiếp trong Git Bash — không phải bug code, do Bash tool không encode UTF-8 đúng khi truyền string qua `-d`; fix bằng cách ghi JSON ra file UTF-8 thật rồi dùng `curl --data-binary @file`.
 
-**Phase 12 — Test coverage tự động (Hoàn thành 2026-07-13):**
+---
+
+### Phase 12 — Test coverage tự động (Hoàn thành 2026-07-13)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-13
 
 Theo roadmap gốc ở `C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-hinton.md` (Phase 12), điều chỉnh lại phạm vi controller cho khớp trạng thái thực tế sau Phase 10-11 (từ 4 controller lên 7). Trước phase này project có 64 unit test service-layer (Mockito) nhưng 0% coverage tự động ở controller/repository/security. Quyết định đã chốt với user trước khi code: Testcontainers (Postgres thật) cho `@DataJpaTest`, không dùng H2; làm tuần tự cả 5 mục trong 1 phiên.
 
 - [x] **1. `@WebMvcTest` + MockMvc cho 7 controller** — mỗi controller 1 file test (`AuthControllerTest`, `AppointmentControllerTest`, `DentistControllerTest`, `DentalServiceControllerTest`, `ClinicSettingsControllerTest`, `WorkScheduleControllerTest`, `PatientControllerTest`). Verify validation DTO → 400, `@PreAuthorize` chặn sai role → 403, happy path đúng status/shape. Mock service qua `@MockitoBean`.
   - `config/MethodSecurityTestConfig.java` (test-only, `@TestConfiguration @EnableMethodSecurity`) dùng chung cho mọi controller test — cần thiết vì `@WebMvcTest` không tự bật method security.
   - Mỗi `@WebMvcTest` phải `excludeFilters` loại `SecurityConfig`/`JwtAuthFilter`/`RateLimitFilter` thật — nếu không, Spring vẫn cố dựng `JwtAuthFilter` (được slice giữ lại vì nó là `Filter`) và fail vì thiếu bean `JwtUtil`/Redis (không muốn kéo cả hạ tầng JWT/Redis vào slice test).
-  - **Gotcha:** endpoint có tham số `Authentication authentication` trong controller (không phải `@PreAuthorize` role check) không tự resolve được từ `@WithMockUser` một mình — `@WithMockUser` chỉ set `SecurityContextHolder` (đủ cho AOP `@PreAuthorize`) nhưng KHÔNG set `request.getUserPrincipal()` (Spring MVC cần cái này để bind tham số `Authentication`) vì cầu nối đó do 1 filter Security thật đảm nhiệm mà slice test không có. Fix: dùng `.principal(new UsernamePasswordAuthenticationToken(email, null, authorities))` trên request builder (set trực tiếp ở tầng MockHttpServletRequest, không cần filter).
+  - **Gotcha:** endpoint có tham số `Authentication authentication` trong controller (không phải `@PreAuthorize` role check) không tự resolve được từ `@WithMockUser` một mình — `@WithMockUser` chỉ set `SecurityContextHolder` (đủ cho AOP `@PreAuthorize`) nhưng KHÔNG set `request.getUserPrincipal()` (Spring MVC cần cái này để bind tham số `Authentication`) vì cầu nối đó do 1 filter Security thật đảm nhiệm mà slice test không có.
+    - Fix: dùng `.principal(new UsernamePasswordAuthenticationToken(email, null, authorities))` trên request builder (set trực tiếp ở tầng MockHttpServletRequest, không cần filter).
 - [x] **2. `@DataJpaTest` cho repository** — `AppointmentRepositoryTest` (pessimistic lock `findConflictingForUpdate`, các query count) và `WorkScheduleRepositoryTest` (`findByDentistIdAndDayOfWeekForUpdate`, unique constraint `(dentist_id, day_of_week)`). Dùng Testcontainers Postgres thật (`@Container @ServiceConnection`), `@AutoConfigureTestDatabase(replace = NONE)` để không bị JPA slice tự thay bằng embedded DB. `ClinicSettingsRepository` không có custom query method nên không cần test riêng (chỉ CRUD chuẩn JpaRepository).
   - **Gotcha Testcontainers 2.x** (kéo theo bởi Spring Boot 4.1.0, `testcontainers.version=2.0.5` trong BOM): toàn bộ artifact id đổi sang tiền tố `testcontainers-*` (`org.testcontainers:testcontainers-junit-jupiter`, `org.testcontainers:testcontainers-postgresql` — KHÔNG phải `org.testcontainers:junit-jupiter`/`org.testcontainers:postgresql` như convention 1.x cũ). `PostgreSQLContainer` chuyển sang package `org.testcontainers.postgresql` và **không còn generic** (`PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16")`, không phải `PostgreSQLContainer<?>`/`<>`).
   - **Gotcha Spring Boot 4 test slice**: `@DataJpaTest`/`TestEntityManager`/`AutoConfigureTestDatabase` không còn nằm trong 1 module `spring-boot-test-autoconfigure` như Boot 3 — bị tách theo domain giống main starters: `@DataJpaTest` → `org.springframework.boot.data.jpa.test.autoconfigure` (dependency `spring-boot-starter-data-jpa-test`), `TestEntityManager` → `org.springframework.boot.jpa.test.autoconfigure`, `AutoConfigureTestDatabase` → `org.springframework.boot.jdbc.test.autoconfigure`.
@@ -268,26 +363,37 @@ Theo roadmap gốc ở `C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-h
 - [x] **4. Jacoco** — plugin `jacoco` trong `build.gradle`, `jacocoTestReport` (HTML+XML) chạy sau `test`, `jacocoTestCoverageVerification` gate line coverage tối thiểu 50% (baseline thực tế đo được ~58%, không đặt 100% cứng nhắc) gắn vào `check`. CI (`antijob-ci.yml`) publish report HTML làm artifact `jacoco-coverage-report`.
 - [x] **5. Verify toàn bộ** — `./gradlew build` pass (126 test: 64 cũ + 9 JWT + 10 repository Testcontainers + ~43 controller MockMvc), Jacoco gate pass. `docker compose up -d` (Postgres+Redis dev) cần chạy trước khi test vì `AntijobApplicationTests.contextLoads()` (`@SpringBootTest`) cần Postgres thật ở `localhost:5432` — khác với `@DataJpaTest` mới (tự chạy Postgres riêng qua Testcontainers, không phụ thuộc docker-compose dev). Docs cập nhật: README (mục Test + CI/CD), CHANGELOG (Phase 12 entry), CLAUDE.md (mục này).
 
-**Phase 13 — Observability/ops (Hoàn thành 2026-07-13, cùng ngày với Phase 12):**
+---
 
-Theo roadmap gốc (`C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-hinton.md`, Phase 13). Bỏ mục Micrometer/Prometheus (đánh dấu "tuỳ chọn" trong roadmap gốc) vì chưa có hạ tầng scrape nào (Prometheus/Grafana) để nhắm tới — quyết định hợp lý, không phải bỏ sót.
+### Phase 13 — Observability/ops (Hoàn thành 2026-07-13, cùng ngày với Phase 12)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-13
+
+Theo roadmap gốc (`C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-hinton.md`, Phase 13). Bỏ mục Micrometer/Prometheus (đánh dấu "tuỳ chọn" trong roadmap gốc) vì chưa có hạ tầng scrape nào (Prometheus/Grafana) để nhắm tới — quyết định hợp lý, không phải bỏ sót. *(Khắc phục ở Phase 16.)*
 
 - [x] **1. `spring-boot-starter-actuator`** — `GET /actuator/health` duy nhất được expose (`management.endpoints.web.exposure.include: health`), `show-details: never` (không lộ chi tiết DB/Redis connection ra response). `SecurityConfig` thêm `permitAll()` cho `/actuator/health/**` — health probe không cần JWT.
 - [x] **2. `Dockerfile` `HEALTHCHECK`** — cài `curl` ở runtime stage (base image `eclipse-temurin:21-jre` không có sẵn), `HEALTHCHECK CMD curl -f http://localhost:8080/actuator/health`.
 - [x] **3. `docker-compose.yml`**: service `antijob-app` mới, đặt trong Compose profile riêng (`profiles: ["full"]`) — **cố tình không chạy cùng** `docker compose up -d` mặc định (tránh xung đột port 8080 với dev đang `bootRun` song song), bật bằng `docker compose --profile full up -d --build`.
-  - **Bug tìm & fix lúc verify thật**: ban đầu truyền `JWT_SECRET: ${JWT_SECRET:-}` (và tương tự cho `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`CORS_ALLOWED_ORIGINS`/`SPRING_PROFILES_ACTIVE`) qua `environment:` — khi host không set biến, Compose vẫn set env var đó thành **chuỗi rỗng** trong container (khác hẳn "chưa set"). Spring Boot coi biến rỗng là "đã có giá trị" nên **không** fallback về default trong `application.yaml` nữa → `JwtUtil` bean crash thật (`WeakKeyException: key byte array is 0 bits`), container `Exited (1)`. Fix: bỏ hẳn 5 biến này khỏi `environment:` của `antijob-app` — chỉ giữ `DB_HOST=dental-db`/`REDIS_HOST=dental-redis` (bắt buộc, vì `localhost` không resolve được sang container khác) + `DB_NAME`/`DB_USERNAME`/`DB_PASSWORD` (khớp service postgres). Muốn override 5 biến kia cho môi trường giống prod thì dùng `deploy.sh`/`.env` như cũ, không phải qua compose profile này.
+  - **Bug tìm & fix lúc verify thật**: ban đầu truyền `JWT_SECRET: ${JWT_SECRET:-}` (và tương tự cho `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`CORS_ALLOWED_ORIGINS`/`SPRING_PROFILES_ACTIVE`) qua `environment:` — khi host không set biến, Compose vẫn set env var đó thành **chuỗi rỗng** trong container (khác hẳn "chưa set"). Spring Boot coi biến rỗng là "đã có giá trị" nên **không** fallback về default trong `application.yaml` nữa → `JwtUtil` bean crash thật (`WeakKeyException: key byte array is 0 bits`), container `Exited (1)`.
+    - Fix: bỏ hẳn 5 biến này khỏi `environment:` của `antijob-app` — chỉ giữ `DB_HOST=dental-db`/`REDIS_HOST=dental-redis` (bắt buộc, vì `localhost` không resolve được sang container khác) + `DB_NAME`/`DB_USERNAME`/`DB_PASSWORD` (khớp service postgres). Muốn override 5 biến kia cho môi trường giống prod thì dùng `deploy.sh`/`.env` như cũ, không phải qua compose profile này.
   - **Bài học chung**: `${VAR:-}` (default rỗng) trong Compose KHÔNG tương đương "để trống hoàn toàn" khi biến gốc dùng làm placeholder Spring Boot (`${JWT_SECRET:default-value}`) — chỉ nên dùng `${VAR:-}` cho biến compose tự dùng nội bộ (image tag, port mapping...), không nên dùng cho biến sẽ truyền tiếp vào 1 ứng dụng Spring Boot có default riêng trong `application.yaml`, vì 2 lớp default (Compose-level và Spring-level) xung đột nhau.
-  - Verify thật: `docker compose --profile full up -d --build` → `docker ps` hiện `antijob-app ... (healthy)` sau ~10s (log `docker inspect` thấy đúng 1 lần fail ban đầu do app chưa kịp start, retry sau 5s thành công) → `curl http://localhost:8080/actuator/health` → `200 {"status":"UP"}`.
-- [x] **4. `CorrelationIdFilter`** (`config/CorrelationIdFilter.java`, `@Component implements Ordered` với `getOrder()=HIGHEST_PRECEDENCE`) — đọc header `X-Request-ID` từ client nếu có, không thì tự sinh UUID, đặt vào MDC key `requestId`, echo lại qua response header, xoá MDC ở `finally`. **Quyết định thiết kế**: KHÔNG add vào `HttpSecurity` chain qua `addFilterBefore` (như `JwtAuthFilter`/`RateLimitFilter`) — dùng `Ordered.HIGHEST_PRECEDENCE` cho 1 servlet filter độc lập để chạy sớm hơn cả `springSecurityFilterChain`, đơn giản hơn nhiều so với phải tìm well-known anchor class phù hợp (xem gotcha `addFilterBefore` ở Phase 9) và filter này không có nhu cầu tương tác với `SecurityContext`.
+  - **Verify:** `docker compose --profile full up -d --build` → `docker ps` hiện `antijob-app ... (healthy)` sau ~10s (log `docker inspect` thấy đúng 1 lần fail ban đầu do app chưa kịp start, retry sau 5s thành công) → `curl http://localhost:8080/actuator/health` → `200 {"status":"UP"}`.
+- [x] **4. `CorrelationIdFilter`** (`config/CorrelationIdFilter.java`, `@Component implements Ordered` với `getOrder()=HIGHEST_PRECEDENCE`) — đọc header `X-Request-ID` từ client nếu có, không thì tự sinh UUID, đặt vào MDC key `requestId`, echo lại qua response header, xoá MDC ở `finally`.
+  - **Quyết định thiết kế**: KHÔNG add vào `HttpSecurity` chain qua `addFilterBefore` (như `JwtAuthFilter`/`RateLimitFilter`) — dùng `Ordered.HIGHEST_PRECEDENCE` cho 1 servlet filter độc lập để chạy sớm hơn cả `springSecurityFilterChain`, đơn giản hơn nhiều so với phải tìm well-known anchor class phù hợp (xem gotcha `addFilterBefore` ở Phase 9) và filter này không có nhu cầu tương tác với `SecurityContext`.
 - [x] **5. `logback-spring.xml` mới** — pattern console thêm `[%X{requestId:--}]` để phân biệt log của các request đồng thời. Verify thật qua `bootRun`: log có định dạng `... [-] ...` khi ngoài request (MDC rỗng, default `--`), curl thật với header `X-Request-ID: my-custom-trace-123` → response echo đúng lại header, không set header → tự sinh UUID khác nhau mỗi request.
 - [x] **6. `CorrelationIdFilterTest`** (4 test Mockito thuần) — verify MDC được set trong lúc `filterChain.doFilter` chạy và bị xoá sau đó (kể cả khi chain ném exception), header luôn được set, tái dùng đúng request-id có sẵn từ client, `getOrder()` đúng `HIGHEST_PRECEDENCE`.
 - [x] **7. Verify toàn bộ** — `./gradlew build` pass (129 test tổng, gồm 4 `CorrelationIdFilterTest` mới). `bootRun` thật + curl xác nhận `/actuator/health` 200 không cần token, header `X-Request-ID` hoạt động đúng cả 2 nhánh. `docker compose --profile full up -d --build` xác nhận healthcheck thật chuyển `starting`→`healthy`. Regression: `docker compose up -d` mặc định (không profile) vẫn chỉ chạy đúng 2 container `dental-db`/`dental-redis` như trước, không có gì đổi. Docs cập nhật: README (Tech Stack + mục "Chạy full stack" + mục Observability mới), CHANGELOG (Phase 13 entry), CLAUDE.md (mục này).
 
-**Phase 14 — Notification + static analysis + CI polish (Hoàn thành 2026-07-13, cùng ngày với Phase 12-13):**
+---
+
+### Phase 14 — Notification + static analysis + CI polish (Hoàn thành 2026-07-13, cùng ngày với Phase 12-13)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-13
 
 Theo roadmap gốc (`C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-hinton.md`, Phase 14). User chọn MailHog (SMTP giả lập cho dev, không gửi mail thật ra ngoài) thay vì tích hợp SMTP provider thật — hợp lý vì project chưa có domain/hạ tầng production nào cần gửi mail thật.
 
-- [x] **1. `EmailService`** (`service/EmailService.java`) — wrapper `JavaMailSender.send(SimpleMailMessage)`, bọc try/catch nuốt mọi exception + `log.error` thay vì propagate. **Quyết định thiết kế quan trọng**: gửi email là side-effect, KHÔNG được làm fail transaction chính — nếu SMTP down, đặt lịch/huỷ lịch/quên mật khẩu vẫn phải thành công, chỉ mất thông báo email (chấp nhận được, khác hẳn nghiệp vụ core).
+- [x] **1. `EmailService`** (`service/EmailService.java`) — wrapper `JavaMailSender.send(SimpleMailMessage)`, bọc try/catch nuốt mọi exception + `log.error` thay vì propagate.
+  - **Quyết định thiết kế quan trọng**: gửi email là side-effect, KHÔNG được làm fail transaction chính — nếu SMTP down, đặt lịch/huỷ lịch/quên mật khẩu vẫn phải thành công, chỉ mất thông báo email (chấp nhận được, khác hẳn nghiệp vụ core). *(Cùng triết lý này sau đó áp dụng cho health check ở Phase 18.)*
 - [x] **2. MailHog** (`docker-compose.yml`, service `mailhog` mới, image `mailhog/mailhog:v1.0.1`) — SMTP giả lập `localhost:1025` (không cần auth) + UI xem mail đã gửi tại `localhost:8025`. `spring.mail.*` trong `application.yaml` trỏ mặc định vào đây qua `MAIL_HOST`/`MAIL_PORT` (default `localhost:1025`), đổi sang SMTP thật chỉ cần set env var, không sửa code.
 - [x] **3. Nối 3 luồng nghiệp vụ với email thật**:
   - `AuthService.forgotPassword` — gửi mã reset qua email, **không còn log token ra server** như trước (Phase 11 để tạm vì chưa có SMTP) — bớt 1 kênh lộ thông tin nhạy cảm giờ không cần thiết nữa.
@@ -301,9 +407,13 @@ Theo roadmap gốc (`C:\Users\ADMIN\.claude\plans\ti-p-t-c-c-ng-vi-c-parsed-hint
 
 **Roadmap gốc (Phase 9-14) coi như đã hoàn thành toàn bộ.** Không còn phase nào tồn đọng — các việc phát sinh sau này (nếu có) sẽ được thêm thành Phase mới khi user yêu cầu, không dựa vào roadmap cũ nữa.
 
-**Phase 15 — JWT logout/revoke (Hoàn thành 2026-07-14):**
+---
 
-Sau đánh giá "sẵn sàng sử dụng" (xem mục dưới), user chọn khắc phục giới hạn "JWT sống hết 24h dù đổi mật khẩu/logout" làm việc tiếp theo.
+### Phase 15 — JWT logout/revoke (Hoàn thành 2026-07-14)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-14
+
+Sau đánh giá "sẵn sàng sử dụng" (xem [mục dưới](#đánh-giá-sẵn-sàng-sử-dụng-2026-07-14)), user chọn khắc phục giới hạn "JWT sống hết 24h dù đổi mật khẩu/logout" làm việc tiếp theo.
 
 - [x] **1. `TokenRevocationService`** (`security/TokenRevocationService.java`, mới) — JWT là stateless nên không "xoá" được token đã phát; thay vào đó lưu 1 mốc `notBefore` (epoch millis) theo email trong Redis (`token:notBefore:<email>`, TTL = đúng bằng `jwt.expiration-ms` vì sau đó token cũ tự hết hạn nên không cần giữ key nữa). `revokeAllTokens(email)` ghi mốc = thời điểm hiện tại; `isRevoked(email, issuedAt)` so `issuedAt` của token với mốc đã lưu — token phát trước mốc bị coi là đã thu hồi. Đây là revoke **toàn bộ token của user** (mọi thiết bị), không phải revoke 1 token đơn lẻ theo `jti` — đơn giản hơn và đúng nhu cầu thực tế (logout nên đăng xuất khỏi mọi phiên, đổi mật khẩu nên vô hiệu hoá token cũ ở mọi nơi).
 - [x] **2. `JwtUtil.extractIssuedAt(token)`** (method mới) — lấy `issuedAt` claim có sẵn từ lúc `generateToken` (không cần thêm claim mới).
@@ -317,7 +427,11 @@ Sau đánh giá "sẵn sàng sử dụng" (xem mục dưới), user chọn khắ
 
 **Giới hạn còn lại sau Phase 15** — `revokeAllTokens` là "logout mọi thiết bị" (không phải revoke từng token/session riêng lẻ theo thiết bị) — chấp nhận được cho quy mô hiện tại, nhưng nếu sau này cần "đăng xuất thiết bị A mà vẫn giữ thiết bị B" thì cần model theo `jti` + danh sách token đang hoạt động (refresh-token pattern), phức tạp hơn nhiều so với nhu cầu thực tế hiện có.
 
-**Phase 16 — Micrometer/Prometheus (Hoàn thành 2026-07-14, cùng ngày với Phase 15):**
+---
+
+### Phase 16 — Micrometer/Prometheus (Hoàn thành 2026-07-14, cùng ngày với Phase 15)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-14
 
 User chọn khắc phục giới hạn "Không có Micrometer/Prometheus" (bỏ qua ở Phase 13 vì lúc đó chưa có hạ tầng scrape) làm việc tiếp theo — chỉ cần nền tảng export metrics đúng chuẩn Prometheus, KHÔNG cần dựng thêm container Prometheus/Grafana thật (vẫn chưa có hạ tầng scrape, nhưng giờ endpoint đã sẵn sàng để gắn vào bất cứ lúc nào).
 
@@ -332,39 +446,58 @@ User chọn khắc phục giới hạn "Không có Micrometer/Prometheus" (bỏ 
 
 ---
 
-**Phase 17 — Sửa 3 bug nghiệp vụ phát hiện qua code review toàn bộ codebase (Hoàn thành 2026-07-15):**
+### Phase 17 — Sửa 3 bug nghiệp vụ phát hiện qua code review toàn bộ codebase (Hoàn thành 2026-07-15)
+
+**Trạng thái:** ✅ Hoàn thành 2026-07-15
 
 Sau khi roadmap gốc xong (Phase 9-16), user yêu cầu review toàn bộ codebase (không phải diff) — chạy song song 1 agent security-review và 2 agent code-quality-review (correctness + simplification/efficiency) trên toàn bộ `service/`/`security/`/`controller/`. Security: sạch, không có finding nào đạt ngưỡng tin cậy cao. Code quality: 3 bug nghiệp vụ thật + vài điểm reuse/efficiency được xác nhận qua đọc lại code trực tiếp (không chỉ tin agent). User chọn ưu tiên xử lý 3 bug trước.
 
-- [x] **1. Double-booking race cho slot hoàn toàn trống** — `SELECT ... FOR UPDATE` trên `appointments` (`findConflictingForUpdate`) chỉ khoá được hàng **đã tồn tại**; nếu chưa có lịch hẹn nào trùng, không có gì để khoá, nên 2 request đặt cùng 1 slot trống đồng thời có thể cùng pass qua check `conflicts.isEmpty()` và cùng insert (Postgres mặc định READ COMMITTED, không có gap-lock, và không có unique constraint nào ở DB làm lưới an toàn cuối — xác nhận qua `V1__init_schema.sql`). **Fix**: `DentistRepository.findByIdForUpdate(id)` mới (`@Lock(PESSIMISTIC_WRITE)` trên `SELECT d FROM Dentist d WHERE d.id = :id`) — khoá hẳn hàng dentist ngay sau khi resolve được dentist (cả 2 nhánh chỉ định trực tiếp lẫn auto-assign), **trước** khi chạy `findConflictingForUpdate`. Request thứ 2 phải chờ request thứ 1 commit/rollback mới được tiếp tục, nên lúc check trùng chắc chắn thấy đúng dữ liệu mới nhất — đóng được race mà cách khoá cũ bỏ sót.
-- [x] **2. Buffer bị bỏ qua khi patient chỉ định dentist trực tiếp** — `book()` dùng `req.getStartTime()`/`endTime` thô (không cộng `buffer_minutes`) khi gọi `findConflictingForUpdate`, trong khi `autoAssignDentist()` và `SlotService` (danh sách slot hiển thị) đều cộng buffer — patient chọn dentist trực tiếp có thể đặt sát lịch khác, không có khoảng đệm. **Fix**: tính `paddedStart`/`paddedEnd` 1 lần ngay đầu `book()` (thay vì tính lặp lại trong `autoAssignDentist()`), dùng nhất quán cho cả check trùng của nhánh chỉ định trực tiếp lẫn nhánh auto-assign. `autoAssignDentist()` đổi signature nhận `paddedStart`/`paddedEnd` làm tham số thay vì tự tính, tham số `settings` không còn dùng nên bỏ luôn (dead param).
-- [x] **3. `maxAdvanceBookingDays`/`openTime` cấu hình được qua admin nhưng chưa từng được enforce** — `validateBookingWindow()` trước đây chỉ check: ngày quá khứ, giờ nghỉ trưa, giờ đóng cửa — thiếu hẳn check `startTime` so với `openTime` và `date` so với `maxAdvanceBookingDays`, nên patient đặt được lịch trước giờ mở cửa hoặc xa vô hạn trong tương lai dù 2 setting này đã tồn tại từ Phase 1 (seed seed sẵn `openTime=08:00`, `maxAdvanceBookingDays=30`) và sửa được qua `ClinicSettingsAdminService`. **Fix**: thêm 2 check vào `validateBookingWindow()`.
+- [x] **1. Double-booking race cho slot hoàn toàn trống**
+  - **Vấn đề:** `SELECT ... FOR UPDATE` trên `appointments` (`findConflictingForUpdate`) chỉ khoá được hàng **đã tồn tại**; nếu chưa có lịch hẹn nào trùng, không có gì để khoá, nên 2 request đặt cùng 1 slot trống đồng thời có thể cùng pass qua check `conflicts.isEmpty()` và cùng insert (Postgres mặc định READ COMMITTED, không có gap-lock, và không có unique constraint nào ở DB làm lưới an toàn cuối — xác nhận qua `V1__init_schema.sql`).
+  - **Fix**: `DentistRepository.findByIdForUpdate(id)` mới (`@Lock(PESSIMISTIC_WRITE)` trên `SELECT d FROM Dentist d WHERE d.id = :id`) — khoá hẳn hàng dentist ngay sau khi resolve được dentist (cả 2 nhánh chỉ định trực tiếp lẫn auto-assign), **trước** khi chạy `findConflictingForUpdate`. Request thứ 2 phải chờ request thứ 1 commit/rollback mới được tiếp tục, nên lúc check trùng chắc chắn thấy đúng dữ liệu mới nhất — đóng được race mà cách khoá cũ bỏ sót.
+- [x] **2. Buffer bị bỏ qua khi patient chỉ định dentist trực tiếp**
+  - **Vấn đề:** `book()` dùng `req.getStartTime()`/`endTime` thô (không cộng `buffer_minutes`) khi gọi `findConflictingForUpdate`, trong khi `autoAssignDentist()` và `SlotService` (danh sách slot hiển thị) đều cộng buffer — patient chọn dentist trực tiếp có thể đặt sát lịch khác, không có khoảng đệm.
+  - **Fix**: tính `paddedStart`/`paddedEnd` 1 lần ngay đầu `book()` (thay vì tính lặp lại trong `autoAssignDentist()`), dùng nhất quán cho cả check trùng của nhánh chỉ định trực tiếp lẫn nhánh auto-assign. `autoAssignDentist()` đổi signature nhận `paddedStart`/`paddedEnd` làm tham số thay vì tự tính, tham số `settings` không còn dùng nên bỏ luôn (dead param).
+- [x] **3. `maxAdvanceBookingDays`/`openTime` cấu hình được qua admin nhưng chưa từng được enforce**
+  - **Vấn đề:** `validateBookingWindow()` trước đây chỉ check: ngày quá khứ, giờ nghỉ trưa, giờ đóng cửa — thiếu hẳn check `startTime` so với `openTime` và `date` so với `maxAdvanceBookingDays`, nên patient đặt được lịch trước giờ mở cửa hoặc xa vô hạn trong tương lai dù 2 setting này đã tồn tại từ Phase 1 (seed sẵn `openTime=08:00`, `maxAdvanceBookingDays=30`) và sửa được qua `ClinicSettingsAdminService`.
+  - **Fix**: thêm 2 check vào `validateBookingWindow()`.
 - [x] **4. Test**: `AppointmentServiceTest` cập nhật fixture `settings` (`.openTime(8:00)`, `.maxAdvanceBookingDays(30)`), thêm 5 test case mới (`book_beforeOpenTime_throwsIllegalArgument`, `book_beyondMaxAdvanceBookingDays_throwsIllegalArgument`, `book_withinMaxAdvanceBookingDays_succeeds`, `book_explicitDentist_conflictCheckAppliesBufferMinutes`), cập nhật 4 test happy-path/conflict/auto-assign có sẵn để stub thêm `dentistRepository.findByIdForUpdate(...)` (nếu không stub, `Optional.empty()` mặc định của Mockito sẽ làm `orElseThrow` ném ngay — bug thật nếu quên update test khi thêm bước lock mới).
-- [x] **5. Verify toàn bộ, gồm cả race condition thật** — `./gradlew build` pass (143 test, Jacoco + SpotBugs 0 finding). `docker compose up -d` + `bootRun` thật + curl: đặt trước giờ mở cửa → 400 đúng message; đặt 400 ngày sau (giới hạn 30 ngày) → 400 đúng message; đặt 2 lịch cách nhau đúng lúc kết thúc/bắt đầu (trong khoảng buffer 10 phút) với dentist chỉ định trực tiếp → 409 đúng (trước đây sẽ là 200, bug); đặt đủ xa sau buffer → 200 đúng. **Race test thật**: bắn 2 request `curl` đồng thời (chạy nền `&` + `wait`) vào đúng 1 slot dentist chưa từng có lịch hẹn nào — kết quả 1 request 200, 1 request 409 (trước fix, cả 2 có thể cùng 200) — xác nhận lock hoạt động đúng ngoài môi trường thật, không chỉ lý thuyết. Regression: `/api/appointments` không token vẫn 403, health/swagger vẫn 200.
+- [x] **5. Verify toàn bộ, gồm cả race condition thật** — `./gradlew build` pass (143 test, Jacoco + SpotBugs 0 finding). `docker compose up -d` + `bootRun` thật + curl: đặt trước giờ mở cửa → 400 đúng message; đặt 400 ngày sau (giới hạn 30 ngày) → 400 đúng message; đặt 2 lịch cách nhau đúng lúc kết thúc/bắt đầu (trong khoảng buffer 10 phút) với dentist chỉ định trực tiếp → 409 đúng (trước đây sẽ là 200, bug); đặt đủ xa sau buffer → 200 đúng.
+  - **Race test thật**: bắn 2 request `curl` đồng thời (chạy nền `&` + `wait`) vào đúng 1 slot dentist chưa từng có lịch hẹn nào — kết quả 1 request 200, 1 request 409 (trước fix, cả 2 có thể cùng 200) — xác nhận lock hoạt động đúng ngoài môi trường thật, không chỉ lý thuyết. Regression: `/api/appointments` không token vẫn 403, health/swagger vẫn 200.
 - [x] **6. Gotcha Windows lặp lại**: port Redis mặc định 6379 rơi vào dải bị Windows loại trừ động (lần này là `6326-6425`, khác dải trước đó) — `docker compose up -d` báo lỗi bind permission dù không process nào đang dùng cổng. Xử lý bằng `REDIS_PORT=17000 docker compose up -d` + `bootRun --args="--spring.data.redis.port=17000"`, không sửa `application.yaml` (đúng gotcha đã ghi từ trước, chỉ khác số cổng bị chặn).
 - [x] **7. Docs**: `CLAUDE.md` (mục này), `CHANGELOG.md` (Phase 17 entry).
 
-**Các finding khác từ code review (reuse/efficiency, chưa fix — không phải bug, chỉ là cơ hội cải thiện, để lại cho lần sau nếu cần)**: `SecurityConfig.permitAll()` và `RateLimitFilter.LIMITED_PATHS` là 2 danh sách tay độc lập đã lệch nhau thật (`reset-password` public nhưng không có rate-limit); pattern `findById(id).orElseThrow(...)` lặp lại tay ≥10 lần trong service layer không có helper chung; `autoAssignDentist` phát sinh tới 3N+1 query cho N dentist đang hoạt động.
+**Các finding khác từ code review (reuse/efficiency, chưa fix — không phải bug, chỉ là cơ hội cải thiện, để lại cho lần sau nếu cần):**
+- `SecurityConfig.permitAll()` và `RateLimitFilter.LIMITED_PATHS` là 2 danh sách tay độc lập đã lệch nhau thật (`reset-password` public nhưng không có rate-limit).
+- Pattern `findById(id).orElseThrow(...)` lặp lại tay ≥10 lần trong service layer không có helper chung.
+- `autoAssignDentist` phát sinh tới 3N+1 query cho N dentist đang hoạt động. *(Đã tối ưu còn 3 query cố định trước khi bắt đầu Phase 18 — xem commit `e541b41`.)*
 
 ---
 
-## Phase 18 — Tách microservice (Booking / Email / Customer-care) qua Kafka — ĐANG TIẾN HÀNH
+### Phase 18 — Tách microservice (Booking / Email / Customer-care) qua Kafka — 🚧 ĐANG TIẾN HÀNH
+
+**Trạng thái:** 🚧 Đang tiến hành — Phase A xong, Phase B/C/D chưa bắt đầu.
 
 Roadmap gốc (Phase 1-17) coi như đã xong hoàn toàn — không còn bug/checklist tồn đọng. User muốn bước tiếp theo là **học/thực hành microservices + Kafka để làm portfolio**, không phải nhu cầu sản xuất thật. Kế hoạch đầy đủ (đã duyệt qua Plan Mode) lưu tại `C:\Users\ADMIN\.claude\plans\linked-crunching-dahl.md` — tham khảo file đó để biết toàn bộ kiến trúc 3 service, quyết định đã chốt (chat model 1:N, MongoDB, Kafka cho cả 3 service, audit log email), và roadmap Phase A→D.
 
-**Phase A — Hạ tầng Kafka + booking-service publish event (Hoàn thành 2026-08-06):**
+#### Phase A — Hạ tầng Kafka + booking-service publish event (Hoàn thành 2026-08-06)
 
-- [x] **1. `docker-compose.yml`**: thêm service `kafka` (`apache/kafka:3.9.0`, KRaft mode — không Zookeeper) + `kafka-ui` (`provectuslabs/kafka-ui`, port 8081, xem topic/message trực quan). Kafka có **2 listener**: `PLAINTEXT` (`kafka:9092`, container-to-container) và `PLAINTEXT_HOST` (`localhost:9094`, dùng khi chạy `bootRun` trực tiếp trên host) — thiếu listener thứ 2 sẽ khiến client trên host nhận cluster metadata quảng cáo `kafka:9092` và không resolve được hostname đó (gotcha gặp thật lúc verify, xem mục 5).
+- [x] **1. `docker-compose.yml`**: thêm service `kafka` (`apache/kafka:3.9.0`, KRaft mode — không Zookeeper) + `kafka-ui` (`provectuslabs/kafka-ui`, port 8081, xem topic/message trực quan). Kafka có **2 listener**: `PLAINTEXT` (`kafka:9092`, container-to-container) và `PLAINTEXT_HOST` (`localhost:9094`, dùng khi chạy `bootRun` trực tiếp trên host) — thiếu listener thứ 2 sẽ khiến client trên host nhận cluster metadata quảng cáo `kafka:9092` và không resolve được hostname đó (gotcha gặp thật lúc verify, xem mục 8).
 - [x] **2. `build.gradle`**: thêm `org.springframework.kafka:spring-kafka`.
 - [x] **3. `config/KafkaProducerConfig.java`** (mới) — **Spring Boot 4.1.0 không còn autoconfigure Kafka** (đã xác nhận: không có `KafkaProperties`/`KafkaAutoConfiguration` ở bất kỳ đâu trong classpath hiện tại, khác hẳn Boot 2.x/3.x) nên phải tự khai báo `ProducerFactory<String, Object>`/`KafkaTemplate<String, Object>` tường minh, đọc `spring.kafka.bootstrap-servers` qua `@Value` thay vì dựa vào cơ chế autoconfig không tồn tại. Value serializer dùng `JacksonJsonSerializer` (Jackson 3, đúng convention Boot 4 đã áp dụng xuyên suốt dự án) — **không** dùng `JsonSerializer` cũ (đã deprecated forRemoval từ spring-kafka 4.0).
 - [x] **4. `event/` package (mới)**: `DomainEvent<T>` (envelope chung: `eventId`/`eventType`/`version`/`occurredAt`/`data`), `KafkaTopics` (hằng số tên topic), `AppointmentBookedPayload`/`AppointmentCancelledPayload`/`PasswordResetRequestedPayload` (payload có cấu trúc, không phải text tiếng Việt dựng sẵn — consumer tương lai tự sở hữu template của nó).
 - [x] **5. `AppointmentService.book()`/`cancel()`, `AuthService.forgotPassword()`**: **thêm** `kafkaTemplate.send(topic, key, event)` song song với `emailService.send(...)` hiện có (cố tình additive, không xoá gì — xoá `EmailService` là việc của Phase B sau khi có consumer thật). Key Kafka: `appointmentId`/`email` tương ứng — đảm bảo ordering đúng theo entity.
-- [x] **6. Test**: cập nhật `AppointmentServiceTest`/`AuthServiceTest` (constructor thêm `KafkaTemplate` mock). **Gotcha test đáng nhớ**: `book()` giờ gọi `saved.getId().toString()` làm Kafka key, nhưng mock `appointmentRepository.save()` trước đây chỉ echo lại entity chưa từng có `id` (BIGSERIAL chỉ sinh ID khi có DB thật) → NPE hàng loạt ở mọi test happy-path. Fix: stub `save()` tự gán `id` nếu chưa có thay vì echo nguyên trạng.
+- [x] **6. Test**: cập nhật `AppointmentServiceTest`/`AuthServiceTest` (constructor thêm `KafkaTemplate` mock).
+  - **Gotcha test đáng nhớ**: `book()` giờ gọi `saved.getId().toString()` làm Kafka key, nhưng mock `appointmentRepository.save()` trước đây chỉ echo lại entity chưa từng có `id` (BIGSERIAL chỉ sinh ID khi có DB thật) → NPE hàng loạt ở mọi test happy-path. Fix: stub `save()` tự gán `id` nếu chưa có thay vì echo nguyên trạng.
 - [x] **7. Verify thật đầy đủ** (không chỉ unit test) — `./gradlew build` pass (143 test, Jacoco + SpotBugs sạch). `docker compose up -d` (thêm kafka/kafka-ui) + `bootRun` + curl book/cancel/forgot-password → dùng `kafka-console-consumer.sh` xác nhận cả 3 topic (`appointment.booked`, `appointment.cancelled`, `auth.password-reset-requested`) nhận đúng JSON event, đồng thời MailHog vẫn nhận đủ 3 email như cũ (regression-free, đúng thiết kế additive). Regression chuẩn: health/swagger/403-không-token không đổi.
-- [x] **8. Gotcha hạ tầng Kafka 1-node phát hiện lúc verify** (đáng nhớ, dễ tái phạm): message **thực sự đã ghi vào topic đúng** (`kafka-get-offsets.sh` xác nhận offset tăng đúng) nhưng `kafka-console-consumer` luôn báo "0 messages" — nguyên nhân: topic nội bộ `__consumer_offsets` (bắt buộc cho mọi consumer group) mặc định cần `replication.factor=3`, không bao giờ tạo được với cluster chỉ có 1 broker, nên consumer group coordinator không khởi tạo được dù producer hoàn toàn khoẻ mạnh. **Fix**: set `KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR`/`KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR`/`KAFKA_TRANSACTION_STATE_LOG_MIN_ISR` đều = 1 trong docker-compose — bắt buộc cho mọi Kafka cluster dev 1-node, dễ bỏ sót vì producer-side không hề báo lỗi.
+- [x] **8. Gotcha hạ tầng Kafka 1-node phát hiện lúc verify** (đáng nhớ, dễ tái phạm): message **thực sự đã ghi vào topic đúng** (`kafka-get-offsets.sh` xác nhận offset tăng đúng) nhưng `kafka-console-consumer` luôn báo "0 messages" — nguyên nhân: topic nội bộ `__consumer_offsets` (bắt buộc cho mọi consumer group) mặc định cần `replication.factor=3`, không bao giờ tạo được với cluster chỉ có 1 broker, nên consumer group coordinator không khởi tạo được dù producer hoàn toàn khoẻ mạnh.
+  - **Fix**: set `KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR`/`KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR`/`KAFKA_TRANSACTION_STATE_LOG_MIN_ISR` đều = 1 trong docker-compose — bắt buộc cho mọi Kafka cluster dev 1-node, dễ bỏ sót vì producer-side không hề báo lỗi.
 - [x] **9. Docs**: `CLAUDE.md` (mục này), `CHANGELOG.md` (Phase 18 Phase A entry).
 
-**Chưa làm (Phase B/C/D — xem kế hoạch đầy đủ trong plan file)**: email-service (project Gradle riêng, consume 4 topic, xoá `EmailService` khỏi booking-service), customer-care-service (WebSocket/STOMP chat + MongoDB + JWT verify copy-paste + publish `chat.message-sent`), orchestration/CI/docs đầy đủ cho cả 3 service.
+**Chưa làm (Phase B/C/D — xem kế hoạch đầy đủ trong plan file):** email-service (project Gradle riêng, consume 4 topic, xoá `EmailService` khỏi booking-service), customer-care-service (WebSocket/STOMP chat + MongoDB + JWT verify copy-paste + publish `chat.message-sent`), orchestration/CI/docs đầy đủ cho cả 3 service.
+
+**Fix phát sinh sau Phase A (2026-08-06, lúc khởi động lại hệ thống để đọc code):** `GET /actuator/health` bị **treo vô thời hạn** — `MailHealthIndicator` (tự bật vì có `spring-boot-starter-mail`) mở kết nối SMTP thật tới MailHog mỗi lần gọi health check; lúc đó MailHog không phản hồi banner SMTP (xác nhận bằng `jcmd <pid> Thread.print`, thấy toàn bộ thread `http-nio-8080-exec-*` block ở `SMTPTransport.openServer`).
+- **Fix**: `management.health.mail.enabled: false` trong `application.yaml` — cùng triết lý với `EmailService` (gửi mail là side-effect, không được ảnh hưởng nghiệp vụ chính; áp dụng luôn cho health check, không để 1 SMTP relay chậm quyết định app có "khoẻ mạnh" hay không).
 
 ---
 
@@ -375,6 +508,7 @@ Sau khi roadmap Phase 9-14 hoàn thành, user yêu cầu tiếp tục tới khi 
 **Audit tĩnh:** grep toàn bộ `src/main/java` không còn `TODO`/`FIXME`/`XXX` sót lại. Không có secret hardcode ngoài `admin123` (default dev có chủ đích, đã document).
 
 **Smoke test thật, nối tiếp 1 luồng nghiệp vụ hoàn chỉnh** (không phải test rời rạc từng endpoint) — `docker compose up -d` (Postgres+Redis+MailHog) + `bootRun` thật + curl, **không tìm thấy bug nào**:
+
 1. Admin login → xem/hiểu `clinic-settings` → tạo dịch vụ mới → xem danh sách dentist/work-schedule → tạo tài khoản RECEPTIONIST → toggle dentist active — tất cả 200 đúng shape.
 2. Patient tự đăng ký/login → xem slot trống → xem/sửa hồ sơ (`/patients/me`) → đặt lịch (auto-assign dentist) — 200 đúng, đúng dentist/slot.
 3. Kiểm tra phân quyền chéo: PATIENT gọi `GET /appointments` (danh sách) → đúng 403; RECEPTIONIST gọi cùng endpoint → đúng 200.
@@ -385,8 +519,11 @@ Sau khi roadmap Phase 9-14 hoàn thành, user yêu cầu tiếp tục tới khi 
 
 **Kết luận: dự án đã sẵn sàng cho mục đích dev/demo/portfolio.** Toàn bộ luồng nghiệp vụ chính (đặt lịch, vòng đời appointment, phân quyền 4 role, profile self-service, admin CRUD config, quên/đổi mật khẩu qua email thật, rate limiting, observability) đã được verify thật, không chỉ test tự động. `./gradlew build` xanh (131 test + Jacoco 50%+ + SpotBugs 0 finding thật).
 
-**Giới hạn đã biết, cố tình chưa làm (không chặn "dùng được", chỉ cần biết trước khi lên production thật):**
-- ~~Không có logout/revoke token~~ — đã khắc phục ở Phase 15 (`TokenRevocationService`, xem mục Phase 15 ở trên). Giới hạn còn lại: revoke là theo user (mọi thiết bị), không phải theo từng phiên/thiết bị riêng lẻ.
-- ~~Không có Micrometer/Prometheus~~ — đã khắc phục ở Phase 16 (`/actuator/prometheus`, xem mục Phase 16 ở trên). Giới hạn còn lại: chưa có Prometheus/Grafana thật nào scrape endpoint này, và endpoint hiện `permitAll` (chấp nhận được cho dev/demo, nên giới hạn network khi deploy thật ra internet công khai).
+---
+
+## Giới hạn đã biết, cố tình chưa làm (không chặn "dùng được", chỉ cần biết trước khi lên production thật)
+
+- ~~Không có logout/revoke token~~ — đã khắc phục ở [Phase 15](#phase-15--jwt-logoutrevoke-hoàn-thành-2026-07-14). Giới hạn còn lại: revoke là theo user (mọi thiết bị), không phải theo từng phiên/thiết bị riêng lẻ.
+- ~~Không có Micrometer/Prometheus~~ — đã khắc phục ở [Phase 16](#phase-16--micrometerprometheus-hoàn-thành-2026-07-14-cùng-ngày-với-phase-15). Giới hạn còn lại: chưa có Prometheus/Grafana thật nào scrape endpoint này, và endpoint hiện `permitAll` (chấp nhận được cho dev/demo, nên giới hạn network khi deploy thật ra internet công khai).
 - MailHog chỉ dùng được cho dev (không gửi mail thật ra ngoài) — cần đổi `MAIL_HOST`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD` sang SMTP provider thật trước khi có người dùng thật.
 - `admin123` là mật khẩu seed mặc định ở dev — **bắt buộc đổi qua `ADMIN_PASSWORD` trước khi chạy `SPRING_PROFILES_ACTIVE=prod`** (đã có fail-fast tương tự cho JWT_SECRET, nhưng ADMIN_PASSWORD không bắt buộc — nếu để trống ở prod thì đơn giản là không tạo admin nào, không phải lỗ hổng, nhưng cần nhớ set để có tài khoản đầu tiên).
