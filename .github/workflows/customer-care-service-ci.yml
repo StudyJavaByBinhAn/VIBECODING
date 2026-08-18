@@ -1,0 +1,45 @@
+name: customer-care-service CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "VIBECODING/antijob/customer-care-service/**"
+      - ".github/workflows/customer-care-service-ci.yml"
+  pull_request:
+    paths:
+      - "VIBECODING/antijob/customer-care-service/**"
+      - ".github/workflows/customer-care-service-ci.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: VIBECODING/antijob/customer-care-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Không có service Mongo/Redis/Kafka nào ở đây — test hiện tại (JwtVerifierTest,
+      # JwtAuthenticationResolverTest, ChatServiceTest) đều Mockito thuần, không cần hạ tầng
+      # thật. Nếu sau này thêm test @DataMongoTest/Testcontainers, thêm service vào đây.
+      - name: Build + test
+        run: ./gradlew build --console=plain
+
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-care-service-junit-test-report
+          path: VIBECODING/antijob/customer-care-service/build/reports/tests/test
+          retention-days: 14

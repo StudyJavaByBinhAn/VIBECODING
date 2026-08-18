@@ -1,0 +1,46 @@
+name: email-service CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "VIBECODING/antijob/email-service/**"
+      - ".github/workflows/email-service-ci.yml"
+  pull_request:
+    paths:
+      - "VIBECODING/antijob/email-service/**"
+      - ".github/workflows/email-service-ci.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: VIBECODING/antijob/email-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Không có service Postgres/Kafka nào ở đây — test hiện tại (EmailSenderServiceTest,
+      # EmailEventListenerTest) đều Mockito thuần, không cần hạ tầng thật. Nếu sau này thêm
+      # @DataJpaTest/Testcontainers cho migration V1__create_sent_emails.sql, thêm service
+      # postgres vào đây giống antijob-ci.yml.
+      - name: Build + test
+        run: ./gradlew build --console=plain
+
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: email-service-junit-test-report
+          path: VIBECODING/antijob/email-service/build/reports/tests/test
+          retention-days: 14

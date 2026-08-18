@@ -101,7 +101,7 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 - [Phase 15](#phase-15--jwt-logoutrevoke-hoàn-thành-2026-07-14) — JWT logout/revoke
 - [Phase 16](#phase-16--micrometerprometheus-hoàn-thành-2026-07-14-cùng-ngày-với-phase-15) — Micrometer/Prometheus
 - [Phase 17](#phase-17--sửa-3-bug-nghiệp-vụ-phát-hiện-qua-code-review-toàn-bộ-codebase-hoàn-thành-2026-07-15) — 3 bug nghiệp vụ từ code review
-- [Phase 18](#phase-18--tách-microservice-booking--email--customer-care-qua-kafka--đang-tiến-hành) — Tách microservice qua Kafka (Phase A+B+C xong) 🚧 **đang làm**
+- [Phase 18](#phase-18--tách-microservice-booking--email--customer-care-qua-kafka--hoàn-thành) — Tách microservice qua Kafka (Phase A+B+C+D xong) ✅
 - [Đánh giá "sẵn sàng sử dụng"](#đánh-giá-sẵn-sàng-sử-dụng-2026-07-14)
 - [Giới hạn đã biết](#giới-hạn-đã-biết-cố-tình-chưa-làm-không-chặn-dùng-được-chỉ-cần-biết-trước-khi-lên-production-thật)
 
@@ -474,9 +474,9 @@ Sau khi roadmap gốc xong (Phase 9-16), user yêu cầu review toàn bộ codeb
 
 ---
 
-### Phase 18 — Tách microservice (Booking / Email / Customer-care) qua Kafka — 🚧 ĐANG TIẾN HÀNH
+### Phase 18 — Tách microservice (Booking / Email / Customer-care) qua Kafka — ✅ HOÀN THÀNH
 
-**Trạng thái:** 🚧 Đang tiến hành — Phase A + B + C xong, Phase D chưa bắt đầu.
+**Trạng thái:** ✅ Hoàn thành toàn bộ — Phase A + B + C + D đều xong (2026-08-18).
 
 Roadmap gốc (Phase 1-17) coi như đã xong hoàn toàn — không còn bug/checklist tồn đọng. User muốn bước tiếp theo là **học/thực hành microservices + Kafka để làm portfolio**, không phải nhu cầu sản xuất thật. Kế hoạch đầy đủ (đã duyệt qua Plan Mode) lưu tại `C:\Users\ADMIN\.claude\plans\linked-crunching-dahl.md` — tham khảo file đó để biết toàn bộ kiến trúc 3 service, quyết định đã chốt (chat model 1:N, MongoDB, Kafka cho cả 3 service, audit log email), và roadmap Phase A→D.
 
@@ -539,7 +539,23 @@ Roadmap gốc (Phase 1-17) coi như đã xong hoàn toàn — không còn bug/ch
 
 **Lệch có chủ đích khỏi plan gốc**: KHÔNG thêm listener thứ 4 cho `email-service` để tiêu thụ `chat.message-sent` (dù plan gốc có nhắc "notify-offline qua email" như 1 kịch bản verify tuỳ chọn) — vì presence/trạng thái online đã bị loại khỏi phạm vi Phase C ngay từ đầu kế hoạch ("Presence/online-status: cố tình bỏ qua"). Không có cách biết ai đang offline thì không có cơ sở quyết định khi nào gửi mail thông báo. Event `chat.message-sent` vẫn được publish đầy đủ, sẵn sàng cho consumer tương lai nếu presence được bổ sung sau này.
 
-**Chưa làm (Phase D — xem kế hoạch đầy đủ trong plan file)**: orchestration đầy đủ (docker-compose root gộp cả 3 service dưới `--profile full`, hiện `email-service`/`customer-care-service` mới chạy tay qua `bootRun`, chưa có service container nào trong compose ngoài hạ tầng); 2 CI workflow riêng cho `email-service`/`customer-care-service` (path-filter riêng, không gộp chung — đúng tinh thần 3 pipeline độc lập); docs (`CLAUDE.md`/`README.md`) riêng cho từng service mới.
+#### Phase D — Orchestration đầy đủ, CI, docs (Hoàn thành 2026-08-18)
+
+- [x] **1. `docker-compose.yml`**: thêm `email-service-app` và `customer-care-app` vào `profiles: ["full"]`, build từ `../email-service`/`../customer-care-service` (Dockerfile riêng từng project). Không truyền `JWT_SECRET` qua env cho `customer-care-app` (đúng gotcha `${VAR:-}` rỗng đã ghi từ Phase 13) — cả 2 service hardcode cùng 1 default JWT secret nên tự khớp nhau, miễn dev không đổi 1 bên mà quên đổi bên kia.
+- [x] **2. 2 CI workflow mới** (`e:\gochocTap\.github\workflows\`): `email-service-ci.yml`, `customer-care-service-ci.yml` — path-filter riêng từng service, build+test độc lập, publish JUnit report riêng, **không gộp chung** với `antijob-ci.yml` (đúng tinh thần 3 pipeline độc lập). Không có service Postgres/Mongo/Kafka nào trong 2 workflow này vì toàn bộ test hiện tại của cả 2 service đều Mockito thuần, không cần hạ tầng thật.
+- [x] **3. Dọn `build.gradle`** của `email-service`/`customer-care-service` — xoá `spring-kafka-test`/`spring-boot-starter-data-jpa-test`/Testcontainers, khai báo từ trước nhưng không có test nào thực sự dùng tới (Simplicity First).
+- [x] **4. `README.md` mới** cho cả `email-service/` và `customer-care-service/` (trước đó chỉ có code, chưa có docs riêng nào).
+- [x] **5. Bug tìm & fix lúc verify container thật (không phải lý thuyết)**: `customer-care-service` build image thành công, container `healthy` ban đầu, nhưng **Mongo không kết nối được**.
+  - **Nguyên nhân**: `application.yaml` dùng prefix `spring.data.mongodb.host/port/database` (đúng convention Boot 3.x), nhưng **Spring Boot 4.1.0 đã đổi sang `spring.mongodb.*`** — prefix cũ không bind vào đâu cả, `MongoClient` âm thầm rơi về default `mongodb://localhost/test`. Trong container, `localhost` là chính nó chứ không phải `care-mongo`, nên mọi query Mongo lỗi `Connection refused`.
+  - **Cách phát hiện**: `docker logs customer-care-app` thấy `hosts=[localhost:27017]` dù đã set đúng env `MONGO_HOST=care-mongo` (xác nhận bằng `docker exec ... env`, loại trừ ngay nguyên nhân "thiếu env var"); vài giây sau Docker healthcheck tự chuyển `healthy`→`unhealthy` khi Actuator Mongo indicator bắt kịp lỗi. Root cause xác nhận bằng cách đọc trực tiếp `spring-configuration-metadata.json` trong jar `spring-boot-mongodb-4.1.0.jar` — thấy `spring.mongodb.*` có default khai báo còn `spring.data.mongodb.*` thì không (dấu hiệu alias/deprecated, không còn bind thật).
+  - **Fix**: đổi `spring.data.mongodb.*` → `spring.mongodb.*`.
+  - **Cùng dạng lỗi đã gặp nhiều lần trong dự án này** (Kafka autoconfig biến mất ở Phase 18A, Flyway tách module ở Phase 4, Testcontainers đổi artifact id ở Phase 12, Redis serializer đổi package ở Phase 5) — Boot 4.1 âm thầm đổi property prefix/package location mà không có warning nào; luôn cần verify bằng cách đọc trực tiếp jar/metadata thay vì đoán theo kinh nghiệm Boot 3.x.
+- [x] **6. Verify thật đầy đủ**: `docker compose --profile full config --quiet` cú pháp hợp lệ, build context resolve đúng cả 3 service. `docker compose --profile full build` cả 2 image mới thành công. Trước fix: `customer-care-app` chuyển `healthy`→`unhealthy` sau vài giây (đúng bug). Sau fix (verify độc lập qua 1 agent chạy song song): container `healthy` trong ~3-6s, log xác nhận `hosts=[care-mongo:27017]` + `Monitor thread successfully connected`; `GET /api/conversations` (patient mới đăng ký qua booking-service thật) → `200` danh sách rỗng đúng; chạy lại full STOMP smoke test (patient gửi tin đầu → tạo conversation → staff nhận real-time → staff reply → patient nhận real-time → REST history đúng 3 tin) — tất cả pass, dữ liệu ghi/đọc thật từ `care-mongo`. `./gradlew build` cả 2 service sau khi dọn `build.gradle` vẫn xanh.
+- [x] **7. Docs**: `CLAUDE.md` (mục này), `worklog/2026-08-18-kafka-phase-d-orchestration.md`.
+
+**Roadmap 3 microservice (Phase A→D) coi như đã hoàn thành toàn bộ.** Việc phát sinh sau này (nếu có) sẽ là phase mới, không dựa vào plan gốc `linked-crunching-dahl.md` nữa.
+
+**Gợi ý cho tương lai (chưa làm, không phải giới hạn chặn dùng)**: presence/online-status cho chat (để dùng listener thứ 4 ở email-service tiêu thụ `chat.message-sent`); test tích hợp Testcontainers cho Mongo/Kafka nếu logic phức tạp hơn sau này.
 
 ---
 

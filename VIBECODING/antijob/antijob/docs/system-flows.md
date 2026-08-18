@@ -207,7 +207,7 @@ Kế hoạch đầy đủ: `C:\Users\ADMIN\.claude\plans\linked-crunching-dahl.m
 | A | Hạ tầng Kafka + booking-service publish event (song song email trực tiếp) | ✅ xong 2026-08-06 |
 | B | email-service tách riêng, xoá gửi email trực tiếp khỏi booking-service | ✅ xong 2026-08-17 |
 | C | customer-care-service — WebSocket/STOMP chat, MongoDB, publish `chat.message-sent` | ✅ xong 2026-08-18 |
-| D | Orchestration đầy đủ (docker-compose root, CI riêng từng service), docs | ⏳ chưa bắt đầu |
+| D | Orchestration đầy đủ (docker-compose root, CI riêng từng service), docs | ✅ xong 2026-08-18 |
 
 ### 5.2 Điểm coupling hạ tầng duy nhất, có chủ đích
 

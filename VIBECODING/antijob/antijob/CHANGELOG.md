@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## Phase 18 (Phase D) — 2026-08-18 (orchestration đầy đủ — cùng ngày với Phase C)
+
+### Added
+- `docker-compose.yml`: `email-service-app` và `customer-care-app` vào `--profile full` — chạy được cả 3 service trong container, không chỉ `bootRun` tay.
+- 2 CI workflow riêng: `email-service-ci.yml`, `customer-care-service-ci.yml`.
+- `README.md` cho `email-service/` và `customer-care-service/`.
+
+### Fixed
+- `customer-care-service`: property prefix `spring.data.mongodb.*` không còn bind ở Spring Boot 4.1.0 (đổi sang `spring.mongodb.*`) — khiến `MongoClient` âm thầm rơi về default `localhost`, không kết nối được `care-mongo` trong container.
+
 ## Phase 18 (Phase C) — 2026-08-18 (customer-care-service — chat real-time qua WebSocket/STOMP)
 
 ### Added

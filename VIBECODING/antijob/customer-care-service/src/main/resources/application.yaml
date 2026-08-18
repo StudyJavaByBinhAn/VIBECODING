@@ -5,11 +5,16 @@ spring:
   application:
     name: customer-care-service
 
+  # Spring Boot 4.1 đổi prefix từ spring.data.mongodb.* (Boot 3.x) sang spring.mongodb.* —
+  # spring.data.mongodb.* giờ không bind vào đâu cả, âm thầm rơi về default mongodb://localhost/test
+  # (không lỗi, không warning — chỉ lặng lẽ sai host). Cùng dạng relocation đã gặp với Kafka/
+  # Flyway/Redis cache package ở booking-service, giờ lặp lại với Mongo ở đây.
+  mongodb:
+    host: ${MONGO_HOST:localhost}
+    port: ${MONGO_PORT:27017}
+    database: ${MONGO_DATABASE:care_mongo}
+
   data:
-    mongodb:
-      host: ${MONGO_HOST:localhost}
-      port: ${MONGO_PORT:27017}
-      database: ${MONGO_DATABASE:care_mongo}
     redis:
       # Cùng Redis instance với booking-service — CHỈ đọc key token:notBefore:{email} để check
       # thu hồi JWT (TokenRevocationCheck), không dùng cho cache/rate-limit ở đây.
