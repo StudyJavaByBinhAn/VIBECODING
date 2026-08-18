@@ -1,6 +1,6 @@
-# Antijob — Tài liệu hệ thống (Login/JWT, đặt lịch, gửi email qua Kafka, kiến trúc microservice)
+# Antijob — Tài liệu hệ thống (Login/JWT, đặt lịch, gửi email qua Kafka, chat real-time, kiến trúc microservice)
 
-> Dựng trực tiếp từ source code sau Phase 18 Phase B (2026-08-17). Xem `CLAUDE.md` để biết lịch sử/quyết định đầy đủ theo từng phase — file này chỉ tập trung vào **cơ chế hoạt động hiện tại**.
+> Dựng trực tiếp từ source code sau Phase 18 Phase C (2026-08-18). Xem `CLAUDE.md` để biết lịch sử/quyết định đầy đủ theo từng phase — file này chỉ tập trung vào **cơ chế hoạt động hiện tại**.
 
 ## Mục lục
 
@@ -9,6 +9,7 @@
 - [3. Đặt lịch & vòng đời appointment](#3-đặt-lịch--vòng-đời-appointment)
 - [4. Gửi email — qua Kafka, không còn gọi trực tiếp](#4-gửi-email--qua-kafka-không-còn-gọi-trực-tiếp)
 - [5. Kiến trúc microservice hiện tại](#5-kiến-trúc-microservice-hiện-tại)
+- [6. Chat real-time — customer-care-service](#6-chat-real-time--customer-care-service)
 
 ---
 
@@ -18,11 +19,13 @@
 |---|---|---|
 | `booking-service` | `8080` | REST API đầy đủ, JWT issuer duy nhất |
 | `email-service` | `8090` | Chỉ `/actuator/health` — không REST API khác, thuần consumer |
+| `customer-care-service` | `8082` | REST (`/api/conversations`) + WebSocket/STOMP (`/ws`) |
 | Postgres (1 container) | `5432` | 2 database: `dental_db` (booking) + `email_service_db` (email-service) |
-| Redis | `6379` | Cache/rate-limit/JWT revocation — chỉ booking-service dùng |
-| Kafka | `9092` nội bộ / `9094` host | 3 topic đang hoạt động |
+| Redis | `6379` | Cache/rate-limit/JWT revocation (booking-service ghi) — customer-care-service đọc read-only |
+| Kafka | `9092` nội bộ / `9094` host | 4 topic đang hoạt động (3 booking + `chat.message-sent`) |
 | Kafka UI | `8081` | Xem topic/message trực quan |
 | MailHog | `1025` SMTP / `8025` Web UI | Nhận mail thật do email-service gửi |
+| MongoDB (`care-mongo`) | `27017` | Conversation/Message của customer-care-service |
 
 ---
 
@@ -155,7 +158,7 @@ sequenceDiagram
 
 ## 5. Kiến trúc microservice hiện tại
 
-Đang tách dần từ monolith sang 3 service độc lập (Phase 18 trong roadmap). Hiện đã xong 2/4 phase.
+Đang tách dần từ monolith sang 3 service độc lập (Phase 18 trong roadmap). Hiện đã xong 3/4 phase — cả 3 service đã chạy được song song.
 
 ```mermaid
 flowchart LR
@@ -167,7 +170,7 @@ flowchart LR
         BS4["Redis (cache/rate-limit/revocation)"]
     end
 
-    subgraph K["Kafka — 3 topic active"]
+    subgraph K["Kafka — 4 topic active"]
         K1["KRaft, 1 broker"]
     end
 
@@ -179,16 +182,21 @@ flowchart LR
         ES4["MailHog/SMTP"]
     end
 
-    subgraph CC["customer-care-service — Phase C, chưa xây"]
-        CC1["WebSocket/STOMP chat + MongoDB"]
+    subgraph CC["customer-care-service :8082"]
+        direction TB
+        CC1["REST /api/conversations + WebSocket/STOMP /ws"]
+        CC2["JWT verify only — không Postgres"]
+        CC3["MongoDB care_mongo"]
+        CC4["Redis (đọc revocation, cùng instance booking)"]
     end
 
     BS -- publish --> K
     K -- consume --> ES
-    K -.-> CC
+    CC -- publish chat.message-sent --> K
+    BS -.->|Redis read-only| CC
 ```
 
-2 service **không gọi REST lẫn nhau** — mọi giao tiếp nghiệp vụ đi qua Kafka. Không có API Gateway/service discovery (chưa cần ở quy mô 2-3 service cho mục đích học tập/portfolio này) — client gọi thẳng booking-service, email-service hoàn toàn bị động phía sau.
+3 service **không gọi REST lẫn nhau** — mọi giao tiếp nghiệp vụ đi qua Kafka (booking-service publish, email-service consume; customer-care-service publish `chat.message-sent`, hiện chưa ai consume). Không có API Gateway/service discovery (chưa cần ở quy mô 3 service cho mục đích học tập/portfolio này) — client gọi thẳng từng service theo đúng port của nó.
 
 ### 5.1 Tiến độ 4 phase
 
@@ -198,9 +206,37 @@ Kế hoạch đầy đủ: `C:\Users\ADMIN\.claude\plans\linked-crunching-dahl.m
 |---|---|---|
 | A | Hạ tầng Kafka + booking-service publish event (song song email trực tiếp) | ✅ xong 2026-08-06 |
 | B | email-service tách riêng, xoá gửi email trực tiếp khỏi booking-service | ✅ xong 2026-08-17 |
-| C | customer-care-service — WebSocket/STOMP chat, MongoDB, publish `chat.message-sent` | ⏳ chưa bắt đầu |
+| C | customer-care-service — WebSocket/STOMP chat, MongoDB, publish `chat.message-sent` | ✅ xong 2026-08-18 |
 | D | Orchestration đầy đủ (docker-compose root, CI riêng từng service), docs | ⏳ chưa bắt đầu |
 
 ### 5.2 Điểm coupling hạ tầng duy nhất, có chủ đích
 
-2 service **không** share code (không multi-module Gradle, không jar chung cho `DomainEvent<T>`/payload — mỗi bên tự định nghĩa lại) và **không** gọi REST lẫn nhau. Điểm chung duy nhất: cùng chạy trên 1 Postgres *instance* vật lý (khác database), và cùng đọc chung Kafka bootstrap-servers/MailHog. Đây là coupling hạ tầng dev, không phải coupling code — đúng tinh thần "3 sản phẩm deploy độc lập" đã chốt trong kế hoạch.
+3 service **không** share code (không multi-module Gradle, không jar chung cho `DomainEvent<T>`/payload — mỗi bên tự định nghĩa lại) và **không** gọi REST lẫn nhau. Điểm chung duy nhất: cùng chạy trên 1 Postgres *instance* vật lý (booking-service + email-service, khác database), và cùng đọc chung Kafka bootstrap-servers/MailHog/Redis. customer-care-service đọc (read-only) cùng Redis instance với booking-service chỉ để check thu hồi JWT — không có Postgres nào cho service này. Đây là coupling hạ tầng dev, không phải coupling code — đúng tinh thần "3 sản phẩm deploy độc lập" đã chốt trong kế hoạch.
+
+## 6. Chat real-time — customer-care-service
+
+`customer-care-service` (port `8082`) là service thứ 3, không có REST issue-token nào — nó chỉ **verify** JWT do booking-service phát hành. Vì JWT đã mang sẵn claim `role`, service này build `Authentication` thẳng từ token, **không cần Postgres/UserDetailsService nào cả**.
+
+```mermaid
+sequenceDiagram
+    participant P as Patient (STOMP client)
+    participant CC as customer-care-service :8082
+    participant Mongo as care_mongo
+    participant S as Staff (STOMP client)
+    participant K as Kafka
+
+    P->>CC: CONNECT (Authorization: Bearer jwt)
+    CC->>CC: StompAuthChannelInterceptor: verify + check Redis revocation
+    CC-->>P: CONNECTED
+    P->>CC: SEND /app/chat.send {content}
+    CC->>Mongo: find-or-create Conversation theo patientEmail
+    CC->>Mongo: save Message
+    CC->>K: publish chat.message-sent
+    CC-->>S: broadcast /topic/conversations/{id} (nếu đang subscribe)
+    S->>CC: SEND /app/chat.send {conversationId, content}
+    CC-->>P: broadcast /topic/conversations/{id}
+```
+
+**Model 1 patient : N staff** — mỗi patient có đúng 1 conversation (unique theo `patientEmail`); bất kỳ staff nào (ADMIN/RECEPTIONIST/DENTIST) cũng xem/trả lời được, không phải 1:1 riêng từng cặp. Auth qua **CONNECT header** (`Authorization: Bearer ...`), không phải query param — tránh lộ token vào access log/browser history. Token đã bị thu hồi (logout/đổi mật khẩu) → `StompAuthChannelInterceptor` từ chối ngay ở bước CONNECT (frame `ERROR`), verify bằng cách đọc cùng key Redis `token:notBefore:{email}` mà booking-service ghi — không gọi network sang booking-service.
+
+**Chưa làm (out of scope có chủ đích ở Phase C)**: presence/trạng thái online — do đó `chat.message-sent` publish lên Kafka nhưng hiện chưa có consumer nào (không thêm listener thứ 4 cho email-service vì không có cách biết ai đang offline để quyết định gửi mail thông báo).

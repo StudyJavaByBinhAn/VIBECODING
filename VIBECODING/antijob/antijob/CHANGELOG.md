@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## Phase 18 (Phase C) — 2026-08-18 (customer-care-service — chat real-time qua WebSocket/STOMP)
+
+### Added
+- `antijob/customer-care-service/` — project Gradle độc lập thứ 3. Chat real-time (WebSocket/STOMP), MongoDB (`care_mongo`), auth qua JWT verify copy-paste (không phát hành token, không cần Postgres), publish `chat.message-sent` lên Kafka.
+- `docker-compose.yml`: service `care-mongo` (mongo:7).
+
 ## Phase 18 (Phase B) — 2026-08-17 (email-service tách riêng, xoá EmailService khỏi booking-service)
 
 ### Added

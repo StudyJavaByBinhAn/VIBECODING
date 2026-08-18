@@ -101,7 +101,7 @@ Core files: `SlotService.java` (tính slot trống) · `AppointmentService.java`
 - [Phase 15](#phase-15--jwt-logoutrevoke-hoàn-thành-2026-07-14) — JWT logout/revoke
 - [Phase 16](#phase-16--micrometerprometheus-hoàn-thành-2026-07-14-cùng-ngày-với-phase-15) — Micrometer/Prometheus
 - [Phase 17](#phase-17--sửa-3-bug-nghiệp-vụ-phát-hiện-qua-code-review-toàn-bộ-codebase-hoàn-thành-2026-07-15) — 3 bug nghiệp vụ từ code review
-- [Phase 18](#phase-18--tách-microservice-booking--email--customer-care-qua-kafka--đang-tiến-hành) — Tách microservice qua Kafka (Phase A+B xong) 🚧 **đang làm**
+- [Phase 18](#phase-18--tách-microservice-booking--email--customer-care-qua-kafka--đang-tiến-hành) — Tách microservice qua Kafka (Phase A+B+C xong) 🚧 **đang làm**
 - [Đánh giá "sẵn sàng sử dụng"](#đánh-giá-sẵn-sàng-sử-dụng-2026-07-14)
 - [Giới hạn đã biết](#giới-hạn-đã-biết-cố-tình-chưa-làm-không-chặn-dùng-được-chỉ-cần-biết-trước-khi-lên-production-thật)
 
@@ -476,7 +476,7 @@ Sau khi roadmap gốc xong (Phase 9-16), user yêu cầu review toàn bộ codeb
 
 ### Phase 18 — Tách microservice (Booking / Email / Customer-care) qua Kafka — 🚧 ĐANG TIẾN HÀNH
 
-**Trạng thái:** 🚧 Đang tiến hành — Phase A + B xong, Phase C/D chưa bắt đầu.
+**Trạng thái:** 🚧 Đang tiến hành — Phase A + B + C xong, Phase D chưa bắt đầu.
 
 Roadmap gốc (Phase 1-17) coi như đã xong hoàn toàn — không còn bug/checklist tồn đọng. User muốn bước tiếp theo là **học/thực hành microservices + Kafka để làm portfolio**, không phải nhu cầu sản xuất thật. Kế hoạch đầy đủ (đã duyệt qua Plan Mode) lưu tại `C:\Users\ADMIN\.claude\plans\linked-crunching-dahl.md` — tham khảo file đó để biết toàn bộ kiến trúc 3 service, quyết định đã chốt (chat model 1:N, MongoDB, Kafka cho cả 3 service, audit log email), và roadmap Phase A→D.
 
@@ -516,7 +516,30 @@ Roadmap gốc (Phase 1-17) coi như đã xong hoàn toàn — không còn bug/ch
 
 **Gotcha môi trường phát hiện đầu phiên này**: toàn bộ 5 container (`dental-db`/`dental-redis`/`dental-kafka`/`dental-kafka-ui`/`dental-mailhog`) và cả 2 process Java đã dừng (máy tắt/Docker Desktop restart, không rõ nguyên nhân cụ thể) — phải `docker compose up -d` + `bootRun` lại từ đầu trước khi verify được gì. Không phải bug, chỉ là trạng thái ban đầu của phiên làm việc.
 
-**Chưa làm (Phase C/D — xem kế hoạch đầy đủ trong plan file)**: customer-care-service (WebSocket/STOMP chat + MongoDB + JWT verify copy-paste + publish `chat.message-sent`); orchestration/CI/docs đầy đủ cho cả 3 service (bao gồm thêm `email-service` vào docker-compose root như 1 service container thật — hiện mới chạy tay qua `bootRun`, chưa có Dockerfile được build/test trong CI).
+#### Phase C — customer-care-service, chat real-time (Hoàn thành 2026-08-18)
+
+- [x] **1. `antijob/customer-care-service/`** — project Gradle độc lập thứ 3, package `com.vibecode.customercare`, port `8082`. Dependency: `spring-boot-starter-websocket`, `spring-boot-starter-data-mongodb`, `spring-boot-starter-security`, `spring-boot-starter-data-redis` (chỉ check revocation), `spring-kafka`, `jjwt-api/impl/jackson` (chỉ verify). **Không có Postgres/Flyway** — xem mục 2.
+- [x] **2. `security/JwtVerifier` + `TokenRevocationCheck`** — copy-paste trimmed từ booking-service (chỉ phần verify, không `generateToken`). **Phát hiện đơn giản hơn dự kiến trong plan**: vì JWT đã mang sẵn claim `role`, service này build `Authentication` thẳng từ token — không cần `UserDetailsService`/DB lookup nào, nên cũng không cần Postgres cho service này (khác dự kiến ban đầu trong plan file).
+  - `security/JwtAuthenticationResolver` (mới, không có trong plan gốc) — gộp verify + check thu hồi + build `Authentication`, dùng chung cho cả `JwtAuthFilter` (REST) lẫn `StompAuthChannelInterceptor` (WebSocket), tránh lặp code ở 2 nơi.
+- [x] **3. `config/StompAuthChannelInterceptor`** — auth qua CONNECT header `Authorization: Bearer ...` (không phải query param, đúng quyết định đã chốt trong plan — tránh lộ token vào access log/browser history). Chỉ verify ở command `CONNECT`; các frame sau tái dùng `Principal` đã gắn vào session. Token invalid/revoked → `AccessDeniedException`, Spring Security trả `ERROR` frame và đóng kết nối.
+- [x] **4. `document/Conversation` + `Message`** (MongoDB, `care_mongo`) — model 1 patient : N staff (mỗi patient đúng 1 conversation, unique theo `patientEmail`, bất kỳ staff nào cũng xem/trả lời được — quyết định đã chốt với user).
+- [x] **5. `ws/ChatStompController`** (`@MessageMapping("/chat.send")`) — **1 đích duy nhất cho cả patient lẫn staff** (khác plan gốc dự kiến `/app/conversations/{id}/send`): patient chưa hề có `conversationId` cho tới khi gửi tin đầu tiên (chicken-egg nếu nhét id vào destination), nên server tự "find-or-create" theo email người gửi; staff bắt buộc truyền `conversationId` trong payload.
+- [x] **6. `controller/ConversationController`** — `GET /api/conversations` (staff: tất cả, sort theo `lastMessageAt` DESC; patient: đúng conversation của mình, rỗng nếu chưa từng nhắn), `GET /api/conversations/{id}/messages` (phân trang, staff luôn xem được, patient chỉ xem được conversation của chính mình — `AccessDeniedException` nếu không phải).
+- [x] **7. `ChatService.sendMessage()`** — lưu Message vào Mongo, cập nhật `lastMessageAt`, broadcast qua `SimpMessagingTemplate.convertAndSend("/topic/conversations/{id}", ...)`, publish Kafka `chat.message-sent`.
+- [x] **8. `docker-compose.yml`** (booking-service): thêm service `care-mongo` (`mongo:7`, port `27017`, volume `care-mongo-data`).
+- [x] **9. Test**: `JwtVerifierTest` (5 test, tự dựng JWT bằng jjwt trực tiếp vì service không có `generateToken`), `JwtAuthenticationResolverTest` (4 test Mockito: valid/invalid/null/revoked), `ChatServiceTest` (7 test Mockito: patient tạo conversation, staff thiếu conversationId bị chặn, content rỗng bị chặn, staff reply thành công, patient không phải chủ conversation bị `AccessDeniedException`, list theo role).
+- [x] **10. Verify thật đầy đủ, cả 3 service chạy song song** — `docker compose up -d` (6 container, thêm `care-mongo`) + `bootRun` cả booking/email/customer-care-service + client STOMP tự viết bằng Node (raw WebSocket qua endpoint SockJS `/ws/websocket`, không cần cài thư viện ngoài):
+  1. Patient connect + gửi tin đầu tiên → conversation tự tạo, xác nhận qua `GET /api/conversations`.
+  2. Staff (ADMIN) connect, subscribe đúng `/topic/conversations/{id}`, nhận tin thứ 2 của patient **real-time**.
+  3. Staff reply → patient (đang subscribe) nhận **real-time**.
+  4. `GET /api/conversations/{id}/messages` trả đúng 3 tin, thứ tự mới nhất trước.
+  5. **Token đã logout (revoked)** → CONNECT bị từ chối ngay, nhận `ERROR` frame — xác nhận `TokenRevocationCheck` đọc đúng Redis instance chung với booking-service.
+  - Regression: `GET /api/appointments` booking-service không token vẫn 403, Swagger vẫn 200 — 3 service chạy song song không ảnh hưởng lẫn nhau.
+- [x] **11. Docs**: `CLAUDE.md` (mục này), `worklog/2026-08-18-kafka-phase-c-customer-care-service.md`.
+
+**Lệch có chủ đích khỏi plan gốc**: KHÔNG thêm listener thứ 4 cho `email-service` để tiêu thụ `chat.message-sent` (dù plan gốc có nhắc "notify-offline qua email" như 1 kịch bản verify tuỳ chọn) — vì presence/trạng thái online đã bị loại khỏi phạm vi Phase C ngay từ đầu kế hoạch ("Presence/online-status: cố tình bỏ qua"). Không có cách biết ai đang offline thì không có cơ sở quyết định khi nào gửi mail thông báo. Event `chat.message-sent` vẫn được publish đầy đủ, sẵn sàng cho consumer tương lai nếu presence được bổ sung sau này.
+
+**Chưa làm (Phase D — xem kế hoạch đầy đủ trong plan file)**: orchestration đầy đủ (docker-compose root gộp cả 3 service dưới `--profile full`, hiện `email-service`/`customer-care-service` mới chạy tay qua `bootRun`, chưa có service container nào trong compose ngoài hạ tầng); 2 CI workflow riêng cho `email-service`/`customer-care-service` (path-filter riêng, không gộp chung — đúng tinh thần 3 pipeline độc lập); docs (`CLAUDE.md`/`README.md`) riêng cho từng service mới.
 
 ---
 

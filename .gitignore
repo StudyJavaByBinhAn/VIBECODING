@@ -22,6 +22,7 @@ target/
 !gradle/wrapper/gradle-wrapper.jar
 .gradle/
 out/
+bin/
 
 # Secrets / env
 .env

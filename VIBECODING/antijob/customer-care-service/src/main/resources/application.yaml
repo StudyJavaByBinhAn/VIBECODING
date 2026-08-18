@@ -1,0 +1,34 @@
+server:
+  port: ${SERVER_PORT:8082}
+
+spring:
+  application:
+    name: customer-care-service
+
+  data:
+    mongodb:
+      host: ${MONGO_HOST:localhost}
+      port: ${MONGO_PORT:27017}
+      database: ${MONGO_DATABASE:care_mongo}
+    redis:
+      # Cùng Redis instance với booking-service — CHỈ đọc key token:notBefore:{email} để check
+      # thu hồi JWT (TokenRevocationCheck), không dùng cho cache/rate-limit ở đây.
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+
+jwt:
+  # Phải trùng jwt.secret bên booking-service (cùng 1 JWT_SECRET) — service này chỉ verify chữ
+  # ký, không tự phát hành token.
+  secret: ${JWT_SECRET:dGhpcy1pcy1hLWRldi1vbmx5LXNlY3JldC1rZXktY2hhbmdlLWluLXByb2Q=}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
